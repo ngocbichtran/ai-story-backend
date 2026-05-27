@@ -79,8 +79,32 @@ exports.login = (req, res) => {
 };
 
 exports.getMe = (req, res) => {
-    res.json({
-        message: "User data",
-        user: req.user,
+
+    const sql = `
+        SELECT id, username, email
+        FROM users
+        WHERE id = ?
+    `;
+
+    db.query(sql, [req.user.id], (err, results) => {
+
+        if (err) {
+            console.log(err);
+
+            return res.status(500).json({
+                message: "Server error",
+            });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({
+                message: "User not found",
+            });
+        }
+
+        res.json({
+            message: "User data",
+            user: results[0],
+        });
     });
 };

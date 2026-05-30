@@ -7,10 +7,21 @@ const authRoutes = require("./routes/authRoutes");
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
-
 require("./config/db");
+
+app.use(cors({
+    origin: [
+        "http://localhost:5173",
+        "https://baostory.fun",
+        "https://www.baostory.fun",
+        "https://app.baostory.fun",
+        "https://n8n.baostory.fun"
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true
+}));
+
+app.use(express.json());
 
 app.get("/", (req, res) => {
     res.send("Backend Running");

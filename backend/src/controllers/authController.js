@@ -1,6 +1,10 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const db = require("../config/db");
+const { OAuth2Client } = require("google-auth-library");
+const client = new OAuth2Client(
+    process.env.GOOGLE_CLIENT_ID
+);
 
 exports.register = async (req, res) => {
     try {
@@ -107,4 +111,79 @@ exports.getMe = (req, res) => {
             user: results[0],
         });
     });
+};
+
+exports.googleLogin = async (req, res) => {
+    try {
+        const { credential } = req.body;
+
+        const ticket = await client.verifyIdToken({
+            idToken: credential,
+            audience: process.env.GOOGLE_CLIENT_ID,
+        });
+
+        const payload = ticket.getPayload();
+
+        const email = payload.email;
+        const username = payload.name;
+
+        // kiểm tra user tồn tại chưa
+        db.query(
+            "SELECT * FROM users WHERE email = ?",
+            [email],
+            (err, results) => {
+
+                if (err) {
+                    return res.status(500).json(err);
+                }
+
+                // user đã tồn tại
+                if (results.length > 0) {
+
+                    const user = results[0];
+
+                    const token = jwt.sign(
+                        { id: user.id },
+                        process.env.JWT_SECRET,
+                        { expiresIn: "7d" }
+                    );
+
+                    return res.json({
+                        message: "Google login success",
+                        token,
+                    });
+                }
+
+                // tạo user mới
+                db.query(
+                    "INSERT INTO users(username,email,password) VALUES(?,?,?)",
+                    [username, email, null],
+                    (err, result) => {
+
+                        if (err) {
+                            return res.status(500).json(err);
+                        }
+
+                        const token = jwt.sign(
+                            { id: result.insertId },
+                            process.env.JWT_SECRET,
+                            { expiresIn: "7d" }
+                        );
+
+                        res.json({
+                            message: "Google register success",
+                            token,
+                        });
+                    }
+                );
+            }
+        );
+
+    } catch (error) {
+        console.log(error);
+
+        res.status(500).json({
+            message: "Google login failed",
+        });
+    }
 };

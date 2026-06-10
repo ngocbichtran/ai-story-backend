@@ -109,3 +109,40 @@ exports.approveStoryPlanning = async (req, res) => {
     connection.release();
   }
 };
+/**
+ * Lấy thông tin 1 truyện theo ID
+ * GET /api/stories/:id
+ */
+exports.getStoryById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await db.query(
+      `
+            SELECT *
+            FROM stories
+            WHERE id = ?
+            `,
+      [id],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy truyện",
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: rows[0],
+    });
+  } catch (error) {
+    console.error("❌ Lỗi getStoryById:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

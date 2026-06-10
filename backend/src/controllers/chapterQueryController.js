@@ -10,8 +10,6 @@ exports.getStories = async (req, res) => {
   try {
     // 1. LẤY ID TỪ TOKEN: authMiddleware giải mã (Check cả 3 trường hợp đặt tên thông dụng)
     const user_id = req.user.id;
-    console.log("req.user =", req.user);
-    console.log("user_id =", req.user.id);
     if (!user_id) {
       return res.status(401).json({
         success: false,

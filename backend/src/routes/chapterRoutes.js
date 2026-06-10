@@ -36,4 +36,7 @@ router.get("/story-chapters", chapterQueryController.getChaptersByStory);
 /* GET /api/chapters/display-chapter -> Lấy chi tiết nội dung chữ (MongoDB Atlas) */
 router.get("/display-chapter", chapterQueryController.getDisplayChapter);
 
+/* POST /api/chapters/create -> Tạo chương mới */
+router.post("/create", authMiddleware, chapterController.createChapter);
+
 module.exports = router;

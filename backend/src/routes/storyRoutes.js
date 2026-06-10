@@ -20,5 +20,5 @@ router.post("/init", authMiddleware, storyController.initStory);
  * @access  Private (Cần Đăng nhập)
  */
 router.post("/approve-planning", authMiddleware, storyController.approveStoryPlanning);
-
+router.get("/:id", storyController.getStoryById);
 module.exports = router;

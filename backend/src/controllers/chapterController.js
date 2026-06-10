@@ -298,3 +298,60 @@ exports.finalizeManuscript = async (req, res) => {
     });
   }
 };
+// Tao chuong truyen
+exports.createChapter = async (req, res) => {
+  try {
+    const { story_id, title } = req.body;
+
+    if (!story_id || !title) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu story_id hoặc title",
+      });
+    }
+
+    const [rows] = await db.query(
+      `
+      SELECT MAX(chapter_number) AS maxChapter
+      FROM chapters_index
+      WHERE story_id = ?
+      `,
+      [story_id],
+    );
+
+    const nextChapterNumber = (rows[0]?.maxChapter || 0) + 1;
+
+    const [result] = await db.query(
+      `
+      INSERT INTO chapters_index
+      (
+        story_id,
+        chapter_number,
+        title,
+        status,
+        is_outline_approved
+      )
+      VALUES (?, ?, ?, 'OUTLINE', 0)
+      `,
+      [story_id, nextChapterNumber, title],
+    );
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        id: result.insertId,
+        story_id,
+        chapter_number: nextChapterNumber,
+        title,
+        status: "OUTLINE",
+      },
+    });
+  } catch (error) {
+    console.error("createChapter:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

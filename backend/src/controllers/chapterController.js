@@ -1,6 +1,6 @@
-// 1. ĐƯA TẤT CẢ REQUIRE LÊN ĐẦU FILE (Xóa lỗi cú pháp)
+// 1. ĐƯA TẤT CẢ REQUIRE LÊN ĐẦU FILE (Tránh tuyệt đối lỗi cú pháp)
 const db = require("../config/db");
-const { getMongoDb } = require("../config/mongo"); // Helpers lấy DB Mongo Atlas chuẩn vị trí
+const { getMongoDb } = require("../config/mongo"); // Thư viện kết nối MongoDB Atlas đám mây
 const n8nService = require("../services/n8nService");
 const fileService = require("../services/fileService"); // Thư viện xử lý file vật lý
 
@@ -42,7 +42,7 @@ exports.createOutline = async (req, res) => {
  */
 exports.checkConsistency = async (req, res) => {
   const chapterId = req.params.id;
-  const { content, story_id } = req.body;
+  const { content, story_id } = req.body; // ĐỒNG BỘ KEY: Sử dụng 'content' thay cho 'draft_content'
 
   if (!content) {
     return res.status(400).json({ success: false, message: "Nội dung bản nháp trống, không thể kiểm tra." });
@@ -101,12 +101,12 @@ exports.checkConsistency = async (req, res) => {
 };
 
 /**
- * BƯỚC 8: Biên tập sửa lỗi chính tả (ĐỒNG BỘ NỘI DUNG XUỐNG MONGODB ATLAS VÀ PHẢN HỒI QUA N8N)
+ * BƯỚC 8: Biên tập sửa lỗi chính tả (ĐỒNG BỘ XUỐNG MONGODB ATLAS VÀ PHẢN HỒI QUA N8N)
  * POST /api/chapters/:id/spell-check
  */
 exports.spellCheck = async (req, res) => {
   const chapterId = req.params.id;
-  // CHUẨN KIẾN TRÚC: Frontend gửi cả bộ ba lên để xử lý kiểm tra chặt chẽ
+  // ĐỒNG BỘ HOÀN TOÀN: Nhận bộ ba khóa tổ hợp độc lập cùng key 'content' từ Frontend
   const { story_id, chapter_number, content } = req.body;
 
   if (!story_id || !chapter_number || !content) {
@@ -114,21 +114,21 @@ exports.spellCheck = async (req, res) => {
   }
 
   try {
-    // 1. Kiểm tra mục lục chương có tồn tại khớp bên MySQL không
+    // 1. Kiểm tra mục lục chương gồm ID này có tồn tại hợp lệ bên MySQL không
     const [chapterRows] = await db.promise().query(`SELECT id FROM chapters_index WHERE id = ?`, [chapterId]);
     if (chapterRows.length === 0) {
       return res.status(444).json({ success: false, error: `Không tìm thấy chương ứng với ID mục lục: ${chapterId}` });
     }
 
-    // 2. TRUY VẤN ĐỒNG BỘ TRỰC TIẾP VÀO MONGODB ATLAS
+    // 2. ĐỒNG BỘ TRỰC TIẾP DỮ LIỆU THÔ XUỐNG MONGODB ATLAS
     const mongoDb = getMongoDb();
-    const chapterCollection = mongoDb.collection("chapters"); // Tên Collection trên MongoDB Atlas của bạn
+    const chapterCollection = mongoDb.collection("chapters_content"); // Tên Collection chuẩn xác của bạn trên Atlas
 
     const queryCondition = { story_id: Number(story_id), chapter_number: Number(chapter_number) };
     const chapterDocument = await chapterCollection.findOne(queryCondition);
 
     if (!chapterDocument) {
-      // Nếu chương này tác giả gõ lần đầu, chưa có document -> Tự động khởi tạo luôn
+      // Nếu chưa có tài liệu văn bản -> Tiến hành insert khởi tạo mới dữ liệu thô
       await chapterCollection.insertOne({
         ...queryCondition,
         content: content,
@@ -136,14 +136,14 @@ exports.spellCheck = async (req, res) => {
       });
       console.log(`[MongoDB Atlas] ➕ Đã khởi tạo mới văn bản gốc cho chương ${chapter_number}`);
     } else {
-      // Nếu đã có sẵn trên Atlas, thực hiện cập nhật đè nội dung chữ mới nhất vừa soạn thảo
+      // Nếu có sẵn trên Atlas -> Đồng bộ cập nhật đè nội dung chữ mới nhất vừa gõ
       await chapterCollection.updateOne(queryCondition, {
         $set: { content: content, updated_at: new Date() },
       });
       console.log(`[MongoDB Atlas] 🔄 Đã đồng bộ cập nhật bản thảo thô cho chương ${chapter_number}`);
     }
 
-    // 3. Tiến hành đóng gói ném sang n8n Production xử lý AI chuốt chữ
+    // 3. Tiến hành đóng gói ném dữ liệu thô sang n8n Webhook Production nhờ AI chuốt chữ
     const N8N_EDIT_ART_URL = process.env.N8N_EDIT_ART_URL;
     let polishedText = content;
     let finalStatus = "EDITING";
@@ -152,13 +152,15 @@ exports.spellCheck = async (req, res) => {
       const n8nPayload = {
         story_id: Number(story_id),
         chapter_number: Number(chapter_number),
-        content,
+        content, // Bắn đúng key 'content' đồng bộ sang n8n
       };
 
       const n8nResponse = await n8nService.triggerN8nWorkflow(N8N_EDIT_ART_URL, n8nPayload);
 
       if (n8nResponse) {
         const resData = Array.isArray(n8nResponse) ? n8nResponse[0] : n8nResponse;
+
+        // Nhận key 'editedContent' và động thái cập nhật 'status' từ phản hồi của n8n
         polishedText = resData.editedContent || content;
         if (resData.status) {
           finalStatus = resData.status;
@@ -169,7 +171,7 @@ exports.spellCheck = async (req, res) => {
       polishedText = content + `\n\n*(Đã được AI rà soát lỗi chính tả Chương ${chapter_number} - Chế độ Mockup)*`;
     }
 
-    // 4. Cập nhật lại mục lục trạng thái bên phía MySQL
+    // 4. Đồng bộ cập nhật lại trạng thái quản lý của mục lục bên phía MySQL
     await db.promise().query(`UPDATE chapters_index SET status = ? WHERE id = ?`, [finalStatus, chapterId]);
 
     return res.status(200).json({
@@ -179,7 +181,7 @@ exports.spellCheck = async (req, res) => {
         story_id: Number(story_id),
         chapter_number: Number(chapter_number),
         status: finalStatus,
-        polished_content: polishedText,
+        polished_content: polishedText, // Trả văn bản đã chuốt về cho tác giả hiển thị
       },
     });
   } catch (error) {
@@ -194,14 +196,14 @@ exports.spellCheck = async (req, res) => {
  */
 exports.generateIllustration = async (req, res) => {
   const chapterId = req.params.id;
-  const { story_id, chapter_number } = req.body; // Cập nhật đồng bộ lấy từ body
+  const { story_id, chapter_number } = req.body;
 
   if (!story_id || !chapter_number) {
     return res.status(400).json({ success: false, message: "Thiếu thông tin story_id hoặc chapter_number để định vị tạo ảnh." });
   }
 
   try {
-    // Lấy thông tin nhân vật để phân tích ngoại hình phục vụ gen ảnh
+    // Lấy thông tin nhân vật thuộc truyện để phân tích ngoại hình phục vụ gen ảnh mẫu
     const [characters] = await db.promise().query(`SELECT name, appearance_features FROM story_characters WHERE story_id = ?`, [Number(story_id)]);
 
     const N8N_GEN_ART_URL = process.env.N8N_GEN_ART_URL || process.env.N8N_EDIT_ART_URL;
@@ -275,6 +277,7 @@ exports.finalizeManuscript = async (req, res) => {
 
     const rootFolderPath = stories[0].local_folder_path;
 
+    // Ghi file vật lý xuống máy tính tác giả
     const savedFilePath = await fileService.saveChapterFile(rootFolderPath, chapter_number, title, final_content);
 
     await db.promise().query(`UPDATE chapters_index SET status = 'FINAL' WHERE id = ?`, [chapterId]);

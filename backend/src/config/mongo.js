@@ -10,7 +10,7 @@ async function connectMongoDB() {
     client = new MongoClient(uri);
     await client.connect();
     console.log("MongoDB Atlas Connected (Native Client)");
-    db = client.db(); // Tự động lấy database mặc định trong chuỗi URI
+    db = client.db("ai_story_platform"); // Tự động lấy database mặc định trong chuỗi URI
     return db;
   } catch (error) {
     console.error("Lỗi kết nối MongoDB Atlas:", error);

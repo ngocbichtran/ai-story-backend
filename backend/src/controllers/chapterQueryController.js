@@ -101,6 +101,7 @@ exports.getDisplayChapter = async (req, res) => {
         story_id: chapter.story_id,
         chapter_number: chapter.chapter_number,
         status: chapter.status || "EDITING",
+        content: chapter.content,
         displayContent: chapter.editedContent || chapter.content || "",
         summary: chapter.summary || "",
         imagePrompt: chapter.imagePrompt || "",

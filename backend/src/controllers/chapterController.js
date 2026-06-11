@@ -16,7 +16,7 @@ exports.createOutline = async (req, res) => {
   }
 
   try {
-    const [result] = await db.promise().query(
+    const [result] = await db.query(
       `INSERT INTO chapters_index (story_id, chapter_number, title, outline_objectives, outline_conflicts, outline_results, status, is_outline_approved) 
        VALUES (?, ?, ?, ?, ?, ?, 'OUTLINE', 1)`,
       [Number(story_id), Number(chapter_number), title, outline_objectives || "", outline_conflicts || "", outline_results || ""],
@@ -49,15 +49,15 @@ exports.checkConsistency = async (req, res) => {
   }
 
   try {
-    const [chapterRows] = await db.promise().query(`SELECT chapter_number FROM chapters_index WHERE id = ?`, [chapterId]);
+    const [chapterRows] = await db.query(`SELECT chapter_number FROM chapters_index WHERE id = ?`, [chapterId]);
 
     if (chapterRows.length === 0) {
       return res.status(444).json({ success: false, error: `Không tìm thấy chương ứng với ID: ${chapterId}` });
     }
     const chapter_number = chapterRows[0].chapter_number;
 
-    const [characters] = await db.promise().query(`SELECT name FROM story_characters WHERE story_id = ?`, [Number(story_id)]);
-    const [worldEntities] = await db.promise().query(`SELECT entity_name FROM world_building WHERE story_id = ?`, [Number(story_id)]);
+    const [characters] = await db.query(`SELECT name FROM story_characters WHERE story_id = ?`, [Number(story_id)]);
+    const [worldEntities] = await db.query(`SELECT entity_name FROM world_building WHERE story_id = ?`, [Number(story_id)]);
 
     const validCharacters = characters.map((c) => c.name);
     const validEntities = worldEntities.map((w) => w.entity_name);
@@ -86,7 +86,7 @@ exports.checkConsistency = async (req, res) => {
       }
     }
 
-    await db.promise().query(`UPDATE chapters_index SET status = 'CANON_CHECKED' WHERE id = ?`, [chapterId]);
+    await db.query(`UPDATE chapters_index SET status = 'CANON_CHECKED' WHERE id = ?`, [chapterId]);
 
     return res.status(200).json({
       success: true,
@@ -115,7 +115,7 @@ exports.spellCheck = async (req, res) => {
 
   try {
     // 1. Kiểm tra mục lục chương gồm ID này có tồn tại hợp lệ bên MySQL không
-    const [chapterRows] = await db.promise().query(`SELECT id FROM chapters_index WHERE id = ?`, [chapterId]);
+    const [chapterRows] = await db.query(`SELECT id FROM chapters_index WHERE id = ?`, [chapterId]);
     if (chapterRows.length === 0) {
       return res.status(444).json({ success: false, error: `Không tìm thấy chương ứng với ID mục lục: ${chapterId}` });
     }
@@ -172,7 +172,7 @@ exports.spellCheck = async (req, res) => {
     }
 
     // 4. Đồng bộ cập nhật lại trạng thái quản lý của mục lục bên phía MySQL
-    await db.promise().query(`UPDATE chapters_index SET status = ? WHERE id = ?`, [finalStatus, chapterId]);
+    await db.query(`UPDATE chapters_index SET status = ? WHERE id = ?`, [finalStatus, chapterId]);
 
     return res.status(200).json({
       success: true,
@@ -204,7 +204,7 @@ exports.generateIllustration = async (req, res) => {
 
   try {
     // Lấy thông tin nhân vật thuộc truyện để phân tích ngoại hình phục vụ gen ảnh mẫu
-    const [characters] = await db.promise().query(`SELECT name, appearance_features FROM story_characters WHERE story_id = ?`, [Number(story_id)]);
+    const [characters] = await db.query(`SELECT name, appearance_features FROM story_characters WHERE story_id = ?`, [Number(story_id)]);
 
     const N8N_GEN_ART_URL = process.env.N8N_GEN_ART_URL || process.env.N8N_EDIT_ART_URL;
     let generatedImageUrl = null;
@@ -231,7 +231,7 @@ exports.generateIllustration = async (req, res) => {
     }
 
     if (generatedImageUrl) {
-      await db.promise().query(`INSERT INTO chapter_illustrations (chapter_id, image_url, prompt_used) VALUES (?, ?, ?)`, [chapterId, generatedImageUrl, promptUsed]);
+      await db.query(`INSERT INTO chapter_illustrations (chapter_id, image_url, prompt_used) VALUES (?, ?, ?)`, [chapterId, generatedImageUrl, promptUsed]);
     }
 
     return res.status(200).json({
@@ -263,14 +263,14 @@ exports.finalizeManuscript = async (req, res) => {
   }
 
   try {
-    const [chapterRows] = await db.promise().query(`SELECT chapter_number, title FROM chapters_index WHERE id = ?`, [chapterId]);
+    const [chapterRows] = await db.query(`SELECT chapter_number, title FROM chapters_index WHERE id = ?`, [chapterId]);
 
     if (chapterRows.length === 0) {
       return res.status(444).json({ success: false, error: `Không tìm thấy chương ứng với ID: ${chapterId}` });
     }
     const { chapter_number, title } = chapterRows[0];
 
-    const [stories] = await db.promise().query(`SELECT local_folder_path FROM stories WHERE id = ?`, [Number(story_id)]);
+    const [stories] = await db.query(`SELECT local_folder_path FROM stories WHERE id = ?`, [Number(story_id)]);
     if (stories.length === 0) {
       return res.status(404).json({ success: false, message: "Không tìm thấy thông tin cấu hình thư mục của truyện này." });
     }
@@ -280,7 +280,7 @@ exports.finalizeManuscript = async (req, res) => {
     // Ghi file vật lý xuống máy tính tác giả
     const savedFilePath = await fileService.saveChapterFile(rootFolderPath, chapter_number, title, final_content);
 
-    await db.promise().query(`UPDATE chapters_index SET status = 'FINAL' WHERE id = ?`, [chapterId]);
+    await db.query(`UPDATE chapters_index SET status = 'FINAL' WHERE id = ?`, [chapterId]);
 
     return res.status(200).json({
       success: true,

@@ -95,26 +95,37 @@ exports.getMe = (req, res) => {
 
 exports.googleLogin = async (req, res) => {
   try {
+    console.log("STEP 1");
     console.log("BODY =", req.body);
+
     const { credential } = req.body;
+
+    console.log("STEP 2");
 
     const ticket = await client.verifyIdToken({
       idToken: credential,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
 
+    console.log("STEP 3");
+
     const payload = ticket.getPayload();
+
+    console.log("STEP 4", payload);
 
     const email = payload.email;
     const username = payload.name;
 
-    // kiểm tra user tồn tại chưa
     db.query("SELECT * FROM users WHERE email = ?", [email], (err, results) => {
+      console.log("STEP 5");
+
       if (err) {
+        console.error("MYSQL SELECT ERROR:", err);
         return res.status(500).json(err);
       }
 
-      // user đã tồn tại
+      console.log("STEP 6", results.length);
+
       if (results.length > 0) {
         const user = results[0];
 
@@ -126,11 +137,15 @@ exports.googleLogin = async (req, res) => {
         });
       }
 
-      // tạo user mới
+      console.log("STEP 7");
+
       db.query("INSERT INTO users(username,email,password) VALUES(?,?,?)", [username, email, null], (err, result) => {
         if (err) {
+          console.error("MYSQL INSERT ERROR:", err);
           return res.status(500).json(err);
         }
+
+        console.log("STEP 8");
 
         const token = jwt.sign({ id: result.insertId }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
@@ -141,7 +156,7 @@ exports.googleLogin = async (req, res) => {
       });
     });
   } catch (error) {
-    console.log(error);
+    console.error("GOOGLE ERROR:", error);
 
     res.status(500).json({
       message: "Google login failed",

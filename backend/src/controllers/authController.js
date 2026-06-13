@@ -2,188 +2,148 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const db = require("../config/db");
 const { OAuth2Client } = require("google-auth-library");
-const client = new OAuth2Client(
-    process.env.GOOGLE_CLIENT_ID
-);
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 exports.register = async (req, res) => {
-    try {
-        const { username, email, password } = req.body;
+  try {
+    const { username, email, password } = req.body;
 
-        const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-        const sql =
-            "INSERT INTO users (username, email, password) VALUES (?, ?, ?)";
+    const sql = "INSERT INTO users (username, email, password) VALUES (?, ?, ?)";
 
-        db.query(
-            sql,
-            [username, email, hashedPassword],
-            (err, result) => {
-                if (err) {
-                    return res.status(500).json(err);
-                }
+    db.query(sql, [username, email, hashedPassword], (err, result) => {
+      if (err) {
+        return res.status(500).json(err);
+      }
 
-                const token = jwt.sign(
-                    { id: result.insertId },
-                    process.env.JWT_SECRET,
-                    { expiresIn: "7d" }
-                );
+      const token = jwt.sign({ id: result.insertId }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
-                res.json({
-                    message: "Register success",
-                    token,
-                });
-            }
-        );
-    } catch (error) {
-        res.status(500).json(error);
-    }
+      res.json({
+        message: "Register success",
+        token,
+      });
+    });
+  } catch (error) {
+    res.status(500).json(error);
+  }
 };
 
 exports.login = (req, res) => {
-    const { email, password } = req.body;
+  const { email, password } = req.body;
 
-    const sql = "SELECT * FROM users WHERE email = ?";
+  const sql = "SELECT * FROM users WHERE email = ?";
 
-    db.query(sql, [email], async (err, results) => {
-        if (err) {
-            return res.status(500).json(err);
-        }
+  db.query(sql, [email], async (err, results) => {
+    if (err) {
+      return res.status(500).json(err);
+    }
 
-        if (results.length === 0) {
-            return res.status(400).json({
-                message: "User not found",
-            });
-        }
+    if (results.length === 0) {
+      return res.status(400).json({
+        message: "User not found",
+      });
+    }
 
-        const user = results[0];
+    const user = results[0];
 
-        const isMatch = await bcrypt.compare(
-            password,
-            user.password
-        );
+    const isMatch = await bcrypt.compare(password, user.password);
 
-        if (!isMatch) {
-            return res.status(400).json({
-                message: "Wrong password",
-            });
-        }
+    if (!isMatch) {
+      return res.status(400).json({
+        message: "Wrong password",
+      });
+    }
 
-        const token = jwt.sign(
-            { id: user.id },
-            process.env.JWT_SECRET,
-            { expiresIn: "7d" }
-        );
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
-        res.json({
-            message: "Login success",
-            token,
-        });
+    res.json({
+      message: "Login success",
+      token,
     });
+  });
 };
 
 exports.getMe = (req, res) => {
-
-    const sql = `
+  const sql = `
         SELECT id, username, email
         FROM users
         WHERE id = ?
     `;
 
-    db.query(sql, [req.user.id], (err, results) => {
+  db.query(sql, [req.user.id], (err, results) => {
+    if (err) {
+      console.log(err);
 
-        if (err) {
-            console.log(err);
+      return res.status(500).json({
+        message: "Server error",
+      });
+    }
 
-            return res.status(500).json({
-                message: "Server error",
-            });
-        }
+    if (results.length === 0) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
 
-        if (results.length === 0) {
-            return res.status(404).json({
-                message: "User not found",
-            });
-        }
-
-        res.json({
-            message: "User data",
-            user: results[0],
-        });
+    res.json({
+      message: "User data",
+      user: results[0],
     });
+  });
 };
 
 exports.googleLogin = async (req, res) => {
-    try {
-        const { credential } = req.body;
+  try {
+    const { credential } = req.body;
 
-        const ticket = await client.verifyIdToken({
-            idToken: credential,
-            audience: process.env.GOOGLE_CLIENT_ID,
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+
+    const email = payload.email;
+    const username = payload.name;
+
+    // kiểm tra user tồn tại chưa
+    db.query("SELECT * FROM users WHERE email = ?", [email], (err, results) => {
+      if (err) {
+        return res.status(500).json(err);
+      }
+
+      // user đã tồn tại
+      if (results.length > 0) {
+        const user = results[0];
+
+        const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+
+        return res.json({
+          message: "Google login success",
+          token,
         });
+      }
 
-        const payload = ticket.getPayload();
+      // tạo user mới
+      db.query("INSERT INTO users(username,email,password) VALUES(?,?,?)", [username, email, null], (err, result) => {
+        if (err) {
+          return res.status(500).json(err);
+        }
 
-        const email = payload.email;
-        const username = payload.name;
+        const token = jwt.sign({ id: result.insertId }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
-        // kiểm tra user tồn tại chưa
-        db.query(
-            "SELECT * FROM users WHERE email = ?",
-            [email],
-            (err, results) => {
-
-                if (err) {
-                    return res.status(500).json(err);
-                }
-
-                // user đã tồn tại
-                if (results.length > 0) {
-
-                    const user = results[0];
-
-                    const token = jwt.sign(
-                        { id: user.id },
-                        process.env.JWT_SECRET,
-                        { expiresIn: "7d" }
-                    );
-
-                    return res.json({
-                        message: "Google login success",
-                        token,
-                    });
-                }
-
-                // tạo user mới
-                db.query(
-                    "INSERT INTO users(username,email,password) VALUES(?,?,?)",
-                    [username, email, null],
-                    (err, result) => {
-
-                        if (err) {
-                            return res.status(500).json(err);
-                        }
-
-                        const token = jwt.sign(
-                            { id: result.insertId },
-                            process.env.JWT_SECRET,
-                            { expiresIn: "7d" }
-                        );
-
-                        res.json({
-                            message: "Google register success",
-                            token,
-                        });
-                    }
-                );
-            }
-        );
-
-    } catch (error) {
-        console.log(error);
-
-        res.status(500).json({
-            message: "Google login failed",
+        res.json({
+          message: "Google register success",
+          token,
         });
-    }
+      });
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({
+      message: "Google login failed",
+    });
+  }
 };

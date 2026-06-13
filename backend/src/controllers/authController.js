@@ -10,34 +10,25 @@ exports.register = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const sql = "INSERT INTO users (username, email, password) VALUES (?, ?, ?)";
+    const [result] = await db.query("INSERT INTO users (username, email, password) VALUES (?, ?, ?)", [username, email, hashedPassword]);
 
-    db.query(sql, [username, email, hashedPassword], (err, result) => {
-      if (err) {
-        return res.status(500).json(err);
-      }
+    const token = jwt.sign({ id: result.insertId }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
-      const token = jwt.sign({ id: result.insertId }, process.env.JWT_SECRET, { expiresIn: "7d" });
-
-      res.json({
-        message: "Register success",
-        token,
-      });
+    res.json({
+      message: "Register success",
+      token,
     });
   } catch (error) {
+    console.error(error);
     res.status(500).json(error);
   }
 };
 
-exports.login = (req, res) => {
-  const { email, password } = req.body;
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-  const sql = "SELECT * FROM users WHERE email = ?";
-
-  db.query(sql, [email], async (err, results) => {
-    if (err) {
-      return res.status(500).json(err);
-    }
+    const [results] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
 
     if (results.length === 0) {
       return res.status(400).json({
@@ -61,24 +52,22 @@ exports.login = (req, res) => {
       message: "Login success",
       token,
     });
-  });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Server error",
+    });
+  }
 };
 
-exports.getMe = (req, res) => {
-  const sql = `
-        SELECT id, username, email
-        FROM users
-        WHERE id = ?
-    `;
-
-  db.query(sql, [req.user.id], (err, results) => {
-    if (err) {
-      console.log(err);
-
-      return res.status(500).json({
-        message: "Server error",
-      });
-    }
+exports.getMe = async (req, res) => {
+  try {
+    const [results] = await db.query(
+      `SELECT id, username, email
+       FROM users
+       WHERE id = ?`,
+      [req.user.id],
+    );
 
     if (results.length === 0) {
       return res.status(404).json({
@@ -90,70 +79,49 @@ exports.getMe = (req, res) => {
       message: "User data",
       user: results[0],
     });
-  });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      message: "Server error",
+    });
+  }
 };
 
 exports.googleLogin = async (req, res) => {
   try {
-    console.log("STEP 1");
-    console.log("BODY =", req.body);
-
     const { credential } = req.body;
-
-    console.log("STEP 2");
 
     const ticket = await client.verifyIdToken({
       idToken: credential,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
 
-    console.log("STEP 3");
-
     const payload = ticket.getPayload();
-
-    console.log("STEP 4", payload);
 
     const email = payload.email;
     const username = payload.name;
 
-    db.query("SELECT * FROM users WHERE email = ?", [email], (err, results) => {
-      console.log("STEP 5");
+    const [results] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
 
-      if (err) {
-        console.error("MYSQL SELECT ERROR:", err);
-        return res.status(500).json(err);
-      }
+    if (results.length > 0) {
+      const user = results[0];
 
-      console.log("STEP 6", results.length);
+      const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
-      if (results.length > 0) {
-        const user = results[0];
-
-        const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: "7d" });
-
-        return res.json({
-          message: "Google login success",
-          token,
-        });
-      }
-
-      console.log("STEP 7");
-
-      db.query("INSERT INTO users(username,email,password) VALUES(?,?,?)", [username, email, null], (err, result) => {
-        if (err) {
-          console.error("MYSQL INSERT ERROR:", err);
-          return res.status(500).json(err);
-        }
-
-        console.log("STEP 8");
-
-        const token = jwt.sign({ id: result.insertId }, process.env.JWT_SECRET, { expiresIn: "7d" });
-
-        res.json({
-          message: "Google register success",
-          token,
-        });
+      return res.json({
+        message: "Google login success",
+        token,
       });
+    }
+
+    const [result] = await db.query("INSERT INTO users(username,email,password) VALUES(?,?,?)", [username, email, null]);
+
+    const token = jwt.sign({ id: result.insertId }, process.env.JWT_SECRET, { expiresIn: "7d" });
+
+    return res.json({
+      message: "Google register success",
+      token,
     });
   } catch (error) {
     console.error("GOOGLE ERROR:", error);

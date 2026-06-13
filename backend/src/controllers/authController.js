@@ -95,6 +95,7 @@ exports.getMe = (req, res) => {
 
 exports.googleLogin = async (req, res) => {
   try {
+    console.log("BODY =", req.body);
     const { credential } = req.body;
 
     const ticket = await client.verifyIdToken({

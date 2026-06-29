@@ -10,7 +10,7 @@ exports.register = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const [result] = await db.query("INSERT INTO users (username, email, password) VALUES (?, ?, ?)", [username, email, hashedPassword]);
+    const [result] = await db.query("INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)", [username, email, hashedPassword]);
 
     const token = jwt.sign({ id: result.insertId }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
@@ -38,7 +38,7 @@ exports.login = async (req, res) => {
 
     const user = results[0];
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(password, user.password_hash);
 
     if (!isMatch) {
       return res.status(400).json({
@@ -115,7 +115,7 @@ exports.googleLogin = async (req, res) => {
       });
     }
 
-    const [result] = await db.query("INSERT INTO users(username,email,password) VALUES(?,?,?)", [username, email, null]);
+    const [result] = await db.query("INSERT INTO users(username,email,password_hash) VALUES(?,?,?)", [username, email, null]);
 
     const token = jwt.sign({ id: result.insertId }, process.env.JWT_SECRET, { expiresIn: "7d" });
 

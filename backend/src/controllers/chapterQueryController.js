@@ -19,9 +19,9 @@ exports.getStories = async (req, res) => {
 
     const [rows] = await db.query(
       `SELECT id, user_id, title, description, cover_image, status
-   FROM stories
-   WHERE user_id = ?
-   ORDER BY id DESC`,
+       FROM stories
+       WHERE user_id = ?
+       ORDER BY id DESC`,
       [user_id],
     );
 
@@ -34,7 +34,7 @@ exports.getStories = async (req, res) => {
 };
 
 /**
- * LẤY MỤC LỤC CHƯƠNG CỦA MỘT TRUYỆN (Từ MySQL bảng chapters_index)
+ * LẤY DANH SÁCH CHƯƠNG CỦA MỘT TRUYỆN (MongoDB)
  * GET /api/chapters/story-chapters?story_id=1
  */
 exports.getChaptersByStory = async (req, res) => {
@@ -42,21 +42,49 @@ exports.getChaptersByStory = async (req, res) => {
     const { story_id } = req.query;
 
     if (!story_id) {
-      return res.status(400).json({ success: false, message: "Thiếu story_id." });
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu story_id.",
+      });
     }
 
-    const [rows] = await db.query(
-      `SELECT id, story_id, chapter_number, title, status 
-        FROM chapters_index 
-        WHERE story_id = ? 
-        ORDER BY chapter_number ASC`,
-      [Number(story_id)],
-    );
+    const mongoDb = getMongoDb();
+    const chapterCollection = mongoDb.collection("chapters_content");
 
-    return res.status(200).json({ success: true, data: rows });
+    const chapters = await chapterCollection
+      .find(
+        { storyId: Number(story_id) },
+        {
+          projection: {
+            storyId: 1,
+            chapterNumber: 1,
+            title: 1,
+            status: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            wordCount: 1,
+          },
+        },
+      )
+      .sort({ chapterNumber: 1 })
+      .toArray();
+
+    return res.status(200).json({
+      success: true,
+      data: chapters.map((ch) => ({
+        id: ch._id.toString(),
+        storyId: ch.storyId,
+        chapterNumber: ch.chapterNumber,
+        title: ch.title,
+        status: ch.status,
+        wordCount: ch.wordCount,
+        createdAt: ch.createdAt,
+        updatedAt: ch.updatedAt,
+      })),
+    });
   } catch (error) {
-    console.error("❌ Lỗi getChaptersByStory:", error.message);
-    return res.status(500).json({ success: false, message: "Lỗi lấy mục lục chương." });
+    console.error("❌ Lỗi tại getChaptersByStory:", error.message);
+    return res.status(500).json({ success: false, message: "Lỗi hệ thống khi lấy danh sách chương." });
   }
 };
 
@@ -80,14 +108,15 @@ exports.getDisplayChapter = async (req, res) => {
 
     // ÉP KIỂU CẢ 2 VỀ NUMBER ĐỂ KHỚP VỚI INT32 TRONG MONGO
     const query = {
-      story_id: Number(story_id),
-      chapter_number: Number(chapter_number),
+      storyId: Number(story_id),
+      chapterNumber: Number(chapter_number),
     };
 
     console.log("[MongoDB Request Query]:", query);
 
     const chapter = await chapterCollection.findOne(query);
-
+    console.log("Query:", query);
+    console.log("Chapter:", chapter);
     if (!chapter) {
       return res.status(404).json({
         success: false,
@@ -98,13 +127,15 @@ exports.getDisplayChapter = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: {
-        story_id: chapter.story_id,
-        chapter_number: chapter.chapter_number,
-        status: chapter.status || "EDITING",
+        storyId: chapter.storyId,
+        chapterNumber: chapter.chapterNumber,
+        title: chapter.title,
         content: chapter.content,
-        displayContent: chapter.editedContent || chapter.content || "",
-        summary: chapter.summary || "",
-        imagePrompt: chapter.imagePrompt || "",
+        displayContent: chapter.content,
+        status: chapter.status,
+        wordCount: chapter.wordCount,
+        createdAt: chapter.createdAt,
+        updatedAt: chapter.updatedAt,
       },
     });
   } catch (error) {

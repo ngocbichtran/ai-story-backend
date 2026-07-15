@@ -1,64 +1,7 @@
-const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const db = require("../config/db");
 const { OAuth2Client } = require("google-auth-library");
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
-exports.register = async (req, res) => {
-  try {
-    const { username, email, password } = req.body;
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const [result] = await db.query("INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)", [username, email, hashedPassword]);
-
-    const token = jwt.sign({ id: result.insertId }, process.env.JWT_SECRET, { expiresIn: "7d" });
-
-    res.json({
-      message: "Register success",
-      token,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json(error);
-  }
-};
-
-exports.login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    const [results] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
-
-    if (results.length === 0) {
-      return res.status(400).json({
-        message: "User not found",
-      });
-    }
-
-    const user = results[0];
-
-    const isMatch = await bcrypt.compare(password, user.password_hash);
-
-    if (!isMatch) {
-      return res.status(400).json({
-        message: "Wrong password",
-      });
-    }
-
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: "7d" });
-
-    res.json({
-      message: "Login success",
-      token,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      message: "Server error",
-    });
-  }
-};
 
 exports.getMe = async (req, res) => {
   try {

@@ -2,7 +2,7 @@
 const { getMongoDb } = require("../config/mongo");
 
 // =========================================================================
-// 1. API: LẤY THÔNG TIN KHUNG SƯỜN TRUYỆN (Có cơ chế Auto-Fix 404)
+// LẤY THÔNG TIN KHUNG SƯỜN TRUYỆN (Có cơ chế Auto-Fix 404)
 // =========================================================================
 exports.getStoryOutline = async (req, res) => {
   try {
@@ -46,7 +46,7 @@ exports.getStoryOutline = async (req, res) => {
 };
 
 // =========================================================================
-// 2. API: CẬP NHẬT NỘI DUNG KHUNG SƯỜN TRUYỆN (Sử dụng Upsert tránh 404)
+// CẬP NHẬT NỘI DUNG KHUNG SƯỜN TRUYỆN (Sử dụng Upsert tránh 404)
 // =========================================================================
 exports.updateStoryOutline = async (req, res) => {
   try {

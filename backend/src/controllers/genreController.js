@@ -102,31 +102,6 @@ exports.softDeleteStory = async (req, res) => {
   const { genreId } = req.params;
 
   try {
-    // Kiểm tra xem thể loại có tồn tại và chưa bị xóa mềm hay không
-    const [genre] = await db.query(
-      `
-      SELECT id, user_id 
-      FROM genres 
-      WHERE id = ? AND deleted_at IS NULL
-      `,
-      [genreId],
-    );
-
-    if (genre.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Thể loại không tồn tại hoặc đã bị xóa trước đó.",
-      });
-    }
-
-    // Kiểm tra quyền (Chỉ người tạo thể loại mới được phép xóa mềm nó)
-    if (genre[0].user_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: "Bạn không có quyền xóa thể loại do người khác tạo.",
-      });
-    }
-
     // Thực hiện cập nhật mốc thời gian xóa mềm
     await db.query(
       `

@@ -3,96 +3,7 @@ const db = require("../config/db");
 const { getMongoDb } = require("../config/mongo"); // Thư viện kết nối MongoDB Atlas đám mây
 const n8nService = require("../services/n8nService");
 
-/**
- * Biên tập sửa lỗi chính tả (ĐỒNG BỘ XUỐNG MONGODB ATLAS VÀ PHẢN HỒI QUA N8N)
- * POST /api/ai/chapters/:id/spell-check
- */
-exports.spellCheck = async (req, res) => {
-  const chapterId = req.params.id;
-  // ĐỒNG BỘ HOÀN TOÀN: Nhận bộ ba khóa tổ hợp độc lập cùng key 'content' từ Frontend
-  const { story_id, chapter_number, content } = req.body;
-
-  if (!story_id || !chapter_number || !content) {
-    return res.status(400).json({ success: false, message: "Thiếu thông tin story_id, chapter_number hoặc nội dung bản nháp." });
-  }
-
-  try {
-    // 1. Kiểm tra mục lục chương gồm ID này có tồn tại hợp lệ bên MySQL không
-    const [chapterRows] = await db.query(`SELECT id FROM stories WHERE id = ?`, [chapterId]);
-    if (chapterRows.length === 0) {
-      return res.status(444).json({ success: false, error: `Không tìm thấy chương ứng với ID mục lục: ${chapterId}` });
-    }
-
-    // 2. ĐỒNG BỘ TRỰC TIẾP DỮ LIỆU THÔ XUỐNG MONGODB ATLAS
-    const mongoDb = getMongoDb();
-    const chapterCollection = mongoDb.collection("chapters_content"); // Tên Collection chuẩn xác của bạn trên Atlas
-
-    const queryCondition = { story_id: Number(story_id), chapter_number: Number(chapter_number) };
-    const chapterDocument = await chapterCollection.findOne(queryCondition);
-
-    if (!chapterDocument) {
-      // Nếu chưa có tài liệu văn bản -> Tiến hành insert khởi tạo mới dữ liệu thô
-      await chapterCollection.insertOne({
-        ...queryCondition,
-        content: content,
-        created_at: new Date(),
-      });
-      console.log(`[MongoDB Atlas] ➕ Đã khởi tạo mới văn bản gốc cho chương ${chapter_number}`);
-    } else {
-      // Nếu có sẵn trên Atlas -> Đồng bộ cập nhật đè nội dung chữ mới nhất vừa gõ
-      await chapterCollection.updateOne(queryCondition, {
-        $set: { content: content, updated_at: new Date() },
-      });
-      console.log(`[MongoDB Atlas] 🔄 Đã đồng bộ cập nhật bản thảo thô cho chương ${chapter_number}`);
-    }
-
-    // 3. Tiến hành đóng gói ném dữ liệu thô sang n8n Webhook Production nhờ AI chuốt chữ
-    const N8N_EDIT_ART_URL = process.env.N8N_EDIT_ART_URL;
-    let polishedText = content;
-    let finalStatus = "EDITING";
-
-    if (N8N_EDIT_ART_URL) {
-      const n8nPayload = {
-        story_id: Number(story_id),
-        chapter_number: Number(chapter_number),
-        content, // Bắn đúng key 'content' đồng bộ sang n8n
-      };
-
-      const n8nResponse = await n8nService.triggerN8nWorkflow(N8N_EDIT_ART_URL, n8nPayload);
-
-      if (n8nResponse) {
-        const resData = Array.isArray(n8nResponse) ? n8nResponse[0] : n8nResponse;
-
-        // Nhận key 'editedContent' và động thái cập nhật 'status' từ phản hồi của n8n
-        polishedText = resData.editedContent || content;
-        if (resData.status) {
-          finalStatus = resData.status;
-        }
-      }
-    } else {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      polishedText = content + `\n\n*(Đã được AI rà soát lỗi chính tả Chương ${chapter_number} - Chế độ Mockup)*`;
-    }
-
-    // 4. Đồng bộ cập nhật lại trạng thái quản lý của mục lục bên phía MySQL
-    await db.query(`UPDATE chapters_index SET status = ? WHERE id = ?`, [finalStatus, chapterId]);
-
-    return res.status(200).json({
-      success: true,
-      message: "Biên tập sửa lỗi chính tả và đồng bộ đám mây thành công.",
-      data: {
-        story_id: Number(story_id),
-        chapter_number: Number(chapter_number),
-        status: finalStatus,
-        polished_content: polishedText, // Trả văn bản đã chuốt về cho tác giả hiển thị
-      },
-    });
-  } catch (error) {
-    console.error("Lỗi tại hàm spellCheck:", error);
-    return res.status(500).json({ success: false, error: error.message });
-  }
-};
-
+// Các hàm liên quan đến chương
 /**
  * KHỞI TẠO CHƯƠNG MỚI (ĐỒNG BỘ THEO ROUTE RESTFUL PARAMS)
  * POST /api/stories/:storyId/chapters
@@ -113,11 +24,11 @@ exports.createChapter = async (req, res) => {
       });
     }
 
-    // Kiểm tra đủ cả 3 tham số (storyId từ params, 2 cái còn lại từ body)
+    // Kiểm tra đủ cả 3 tham số
     if (!storyId || !chapterNumber || !title) {
       return res.status(400).json({
         success: false,
-        message: "Thiếu thông tin đầu vào bắt buộc (storyId, chapter_number, title).",
+        message: "Thiếu thông tin đầu vào bắt buộc (storyId, chapterNumber, title).",
       });
     }
 
@@ -144,10 +55,10 @@ exports.createChapter = async (req, res) => {
     }
     const collection = mongoDb.collection("chapters_content");
 
-    // 3. Kiểm tra trùng lặp dựa trên định dạng quy chuẩn { story_id, chapter_number }
+    // 3. Kiểm tra trùng lặp dựa trên định dạng camelCase { storyId, chapterNumber }
     const duplicateChapter = await collection.findOne({
-      story_id: cleanStoryId,
-      chapter_number: cleanChapterNumber,
+      storyId: cleanStoryId,
+      chapterNumber: cleanChapterNumber,
     });
 
     if (duplicateChapter !== null) {
@@ -157,10 +68,10 @@ exports.createChapter = async (req, res) => {
       });
     }
 
-    // 4. Khởi tạo cấu trúc tài liệu lưu vào MongoDB Atlas
+    // 4. Khởi tạo cấu trúc tài liệu lưu vào MongoDB Atlas (Thống nhất camelCase)
     const newChapter = {
-      story_id: cleanStoryId,
-      chapter_number: cleanChapterNumber,
+      storyId: cleanStoryId,
+      chapterNumber: cleanChapterNumber,
       title: title.trim(),
       content: "",
       status: "DRAFT",
@@ -192,7 +103,81 @@ exports.createChapter = async (req, res) => {
 };
 
 /**
- * 3. XÓA CHƯƠNG MỀM VÀ TỰ ĐỘNG DỒN SỐ THỨ TỰ CHƯƠNG (MongoDB Atlas)
+ * LẤY CHI TIẾT NỘI DUNG CHƯƠNG (Từ MongoDB)
+ * URL Params: /:storyId/chapters/:chapterNumber
+ */
+exports.getDisplayChapter = async (req, res) => {
+  try {
+    const { storyId, chapterNumber } = req.params;
+
+    if (!storyId || !chapterNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu thông tin storyId hoặc chapterNumber.",
+      });
+    }
+
+    const mongoDb = getMongoDb();
+    if (!mongoDb) {
+      return res.status(500).json({
+        success: false,
+        message: "Mất kết nối cơ sở dữ liệu hệ thống (MongoDB).",
+      });
+    }
+
+    const chapterCollection = mongoDb.collection("chapters_content");
+
+    const cleanStoryId = Number(storyId);
+    const cleanChapterNumber = Number(chapterNumber);
+
+    // BẬC BẢO VỆ 1: Tìm bằng kiểu Number (Chuẩn dữ liệu mới)
+    let chapter = await chapterCollection.findOne({
+      storyId: cleanStoryId,
+      chapterNumber: cleanChapterNumber,
+    });
+
+    // BẬC BẢO VỆ 2: Fallback tìm trường hợp dữ liệu cũ còn sót lại field snake_case
+    if (!chapter) {
+      chapter = await chapterCollection.findOne({
+        $or: [
+          { story_id: cleanStoryId, chapter_number: cleanChapterNumber },
+          { storyId: String(storyId), chapterNumber: String(chapterNumber) },
+        ],
+      });
+    }
+
+    if (!chapter) {
+      return res.status(404).json({
+        success: false,
+        message: `Không tìm thấy nội dung cho Chương ${chapterNumber} (Story ID: ${storyId}).`,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: chapter._id.toString(),
+        storyId: chapter.storyId || chapter.story_id,
+        chapterNumber: chapter.chapterNumber || chapter.chapter_number,
+        title: chapter.title || `Chương ${chapter.chapterNumber || chapter.chapter_number}`,
+        content: chapter.content || "",
+        displayContent: chapter.content || "",
+        status: chapter.status || "DRAFT",
+        createdAt: chapter.createdAt,
+        updatedAt: chapter.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Lỗi getDisplayChapter:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi hệ thống khi lấy dữ liệu chương.",
+    });
+  }
+};
+
+/**
+ * XÓA CHƯƠNG MỀM VÀ TỰ ĐỘNG DỒN SỐ THỨ TỰ CHƯƠNG (MongoDB Atlas)
  * DELETE /api/stories/:storyId/chapters/:chapterNumber
  */
 exports.deleteChapterSoft = async (req, res) => {
@@ -212,15 +197,17 @@ exports.deleteChapterSoft = async (req, res) => {
 
     const mongoDb = getMongoDb();
     if (!mongoDb) {
-      return res.status(500).json({ success: false, message: "Mất kết nối cơ sở dữ liệu hệ thống (MongoDB)." });
+      return res.status(500).json({
+        success: false,
+        message: "Mất kết nối cơ sở dữ liệu hệ thống (MongoDB).",
+      });
     }
     const collection = mongoDb.collection("chapters_content");
 
-    // BƯỚC 1: Thực hiện xóa mềm chương được chọn bằng cách cập nhật deleted_at
-    // Hoặc nếu bạn muốn xóa hẳn chương đó ở Mongo và dồn số các chương sau, dùng deleteOne:
+    // BƯỚC 1: Thực hiện xóa chương được chọn
     const deleteResult = await collection.deleteOne({
-      story_id: cleanStoryId,
-      chapter_number: cleanChapterNumber,
+      storyId: cleanStoryId,
+      chapterNumber: cleanChapterNumber,
     });
 
     if (deleteResult.deletedCount === 0) {
@@ -230,23 +217,17 @@ exports.deleteChapterSoft = async (req, res) => {
       });
     }
 
-    // BƯỚC 2: TỰ ĐỘNG DỒN SỐ CHƯƠNG PHÍA SAU (Đồng bộ thứ tự liên tục)
-    // Tìm toàn bộ chương có 'chapter_number' LỚN HƠN chương vừa xóa (> cleanChapterNumber)
-    // Thực hiện trừ đi 1 đơn vị bằng toán tử $inc
+    // BƯỚC 2: TỰ ĐỘNG DỒN SỐ CHƯƠNG PHÍA SAU (Dùng camelCase: chapterNumber)
     await collection.updateMany(
       {
-        story_id: cleanStoryId,
-        chapter_number: { $gt: cleanChapterNumber }, // $gt: Greater Than (Lớn hơn)
+        storyId: cleanStoryId,
+        chapterNumber: { $gt: cleanChapterNumber },
       },
       {
-        $inc: { chapter_number: -1 }, // Giảm số chương đi 1
+        $inc: { chapterNumber: -1 },
         $set: { updatedAt: new Date() },
       },
     );
-
-    // BƯỚC 3: (Tùy chọn) Nếu bạn có quản lý bảng mục lục bên MySQL (Ví dụ: chapters_index)
-    // Bạn chạy thêm lệnh xóa mềm hoặc xóa hẳn tương ứng:
-    // await db.query("DELETE FROM chapters_index WHERE story_id = ? AND chapter_number = ?", [cleanStoryId, cleanChapterNumber]);
 
     return res.status(200).json({
       success: true,
@@ -258,5 +239,167 @@ exports.deleteChapterSoft = async (req, res) => {
       success: false,
       message: "Lỗi hệ thống khi thực hiện xóa chương.",
     });
+  }
+};
+
+/**
+ * LẤY DANH SÁCH CHƯƠNG CỦA MỘT TRUYỆN (MongoDB)
+ * GET /api/chapters/:storyId/chapters
+ */
+/**
+ * LẤY DANH SÁCH CHƯƠNG CỦA MỘT TRUYỆN (MongoDB)
+ * GET /api/chapters/:storyId/chapters
+ */
+exports.getChaptersByStory = async (req, res) => {
+  try {
+    const { storyId } = req.params;
+
+    if (!storyId || storyId === "undefined") {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu mã định danh tác phẩm (storyId) hợp lệ trên URL.",
+      });
+    }
+
+    const mongoDb = getMongoDb();
+    if (!mongoDb) {
+      return res.status(500).json({
+        success: false,
+        message: "Mất kết nối cơ sở dữ liệu MongoDB Atlas.",
+      });
+    }
+
+    const chapterCollection = mongoDb.collection("chapters_content");
+    const numStoryId = Number(storyId);
+
+    // 🔍 TRUY VẤN LINH HOẠT: Khắc phục triệt để lỗi ép kiểu & tương thích dữ liệu cũ
+    const queryCondition = {
+      $or: [
+        { storyId: numStoryId }, // camelCase dạng Number (Chuẩn mới)
+        { storyId: String(storyId) }, // camelCase dạng String
+        { story_id: numStoryId }, // snake_case dạng Number (Dữ liệu cũ)
+        { story_id: String(storyId) }, // snake_case dạng String
+      ],
+    };
+
+    const chapters = await chapterCollection
+      .find(queryCondition)
+      .sort({ chapterNumber: 1, chapter_number: 1 }) // Sắp xếp tăng dần
+      .toArray();
+
+    // 🔄 MAP DỮ LIỆU CHUẨN VỀ CAMELCASE CHO FRONTEND
+    const responseData = chapters.map((ch) => ({
+      id: ch._id.toString(),
+      storyId: ch.storyId ?? ch.story_id,
+      chapterNumber: ch.chapterNumber ?? ch.chapter_number ?? 0,
+      title: ch.title || "",
+      status: ch.status || "DRAFT",
+      wordCount: ch.wordCount || 0,
+      createdAt: ch.createdAt || ch.created_at,
+      updatedAt: ch.updatedAt || ch.updated_at,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      count: responseData.length,
+      data: responseData,
+    });
+  } catch (error) {
+    console.error("❌ Lỗi tại getChaptersByStory:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi hệ thống khi lấy danh sách chương.",
+    });
+  }
+};
+
+// N8N
+/**
+ * Biên tập sửa lỗi chính tả (ĐỒNG BỘ XUỐNG MONGODB ATLAS VÀ PHẢN HỒI QUA N8N)
+ * POST /api/ai/chapters/:id/spell-check
+ */
+exports.spellCheck = async (req, res) => {
+  const chapterId = req.params.id;
+
+  // Hỗ trợ cả camelCase (ưu tiên) và snake_case gửi từ client lên
+  const storyId = req.body.storyId || req.body.story_id;
+  const chapterNumber = req.body.chapterNumber || req.body.chapter_number;
+  const { content } = req.body;
+
+  if (!storyId || !chapterNumber || !content) {
+    return res.status(400).json({ success: false, message: "Thiếu thông tin storyId, chapterNumber hoặc nội dung bản nháp." });
+  }
+
+  try {
+    // 1. Kiểm tra mục lục chương gồm ID này có tồn tại hợp lệ bên MySQL không
+    const [chapterRows] = await db.query(`SELECT id FROM stories WHERE id = ?`, [chapterId]);
+    if (chapterRows.length === 0) {
+      return res.status(404).json({ success: false, error: `Không tìm thấy chương ứng với ID mục lục: ${chapterId}` });
+    }
+
+    // 2. ĐỒNG BỘ TRỰC TIẾP DỮ LIỆU THÔ XUỐNG MONGODB ATLAS (Dùng camelCase)
+    const mongoDb = getMongoDb();
+    const chapterCollection = mongoDb.collection("chapters_content");
+
+    const queryCondition = { storyId: Number(storyId), chapterNumber: Number(chapterNumber) };
+    const chapterDocument = await chapterCollection.findOne(queryCondition);
+
+    if (!chapterDocument) {
+      await chapterCollection.insertOne({
+        ...queryCondition,
+        content: content,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      console.log(`[MongoDB Atlas] ➕ Đã khởi tạo mới văn bản gốc cho chương ${chapterNumber}`);
+    } else {
+      await chapterCollection.updateOne(queryCondition, {
+        $set: { content: content, updatedAt: new Date() },
+      });
+      console.log(`[MongoDB Atlas] 🔄 Đã đồng bộ cập nhật bản thảo thô cho chương ${chapterNumber}`);
+    }
+
+    // 3. Tiến hành đóng gói ném dữ liệu thô sang n8n Webhook Production
+    const N8N_EDIT_ART_URL = process.env.N8N_EDIT_ART_URL;
+    let polishedText = content;
+    let finalStatus = "EDITING";
+
+    if (N8N_EDIT_ART_URL) {
+      const n8nPayload = {
+        storyId: Number(storyId),
+        chapterNumber: Number(chapterNumber),
+        content,
+      };
+
+      const n8nResponse = await n8nService.triggerN8nWorkflow(N8N_EDIT_ART_URL, n8nPayload);
+
+      if (n8nResponse) {
+        const resData = Array.isArray(n8nResponse) ? n8nResponse[0] : n8nResponse;
+        polishedText = resData.editedContent || content;
+        if (resData.status) {
+          finalStatus = resData.status;
+        }
+      }
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      polishedText = content + `\n\n*(Đã được AI rà soát lỗi chính tả Chương ${chapterNumber} - Chế độ Mockup)*`;
+    }
+
+    // 4. Cập nhật lại trạng thái quản lý của mục lục bên phía MySQL
+    await db.query(`UPDATE chapters_index SET status = ? WHERE id = ?`, [finalStatus, chapterId]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Biên tập sửa lỗi chính tả và đồng bộ đám mây thành công.",
+      data: {
+        storyId: Number(storyId),
+        chapterNumber: Number(chapterNumber),
+        status: finalStatus,
+        polishedContent: polishedText,
+      },
+    });
+  } catch (error) {
+    console.error("Lỗi tại hàm spellCheck:", error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };

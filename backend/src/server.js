@@ -8,6 +8,7 @@ const authRoutes = require("./routes/authRoutes");
 const storyRoutes = require("./routes/storyRoutes"); // Khởi tạo & lập kế hoạch truyện (Bước 1-2)
 const chapterRoutes = require("./routes/chapterRoutes"); // Luồng chương cuốn chiếu (Bước 5-10)
 const genreRoutes = require("./routes/genreRoutes"); // Luồng chương cuốn chiếu (Bước 5-10)
+const storyOutlineRoutes = require("./routes/storyOutlineRoutes"); // Luồng chương cuốn chiếu (Bước 5-10)
 // CHUẨN: Import hàm kết nối MongoDB Atlas lên đầu file
 const { connectMongoDB } = require("./config/mongo");
 
@@ -35,7 +36,8 @@ app.get("/", (req, res) => {
 app.use("/api/auth", authRoutes); // Xác thực, đăng nhập tài khoản
 app.use("/api/stories", storyRoutes); // Quản lý truyện
 app.use("/api/chapters", chapterRoutes); // Quản lý chương
-app.use("/api/genres", genreRoutes); // The loai
+app.use("/api/genres", genreRoutes); // Thể loại
+app.use("/api/storyOutline", storyOutlineRoutes); // Cốt truyện
 
 // 5. KHỞI CHẠY SERVER CHUẨN (Gộp duy nhất một luồng lắng nghe)
 const PORT = process.env.PORT || 4000;

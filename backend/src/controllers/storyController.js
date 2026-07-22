@@ -416,7 +416,7 @@ exports.searchStories = async (req, res) => {
 // ======================================================================
 // AI ĐẢO NGƯỢC Ý TƯỞNG TỪ MÔ TẢ TRUYỆN (POST /api/stories/:storyId/reverse-description)
 // ======================================================================
-exports.reverseDescriptionController = async (req, res) => {
+exports.reverseDescription = async (req, res) => {
   try {
     const { storyId } = req.params;
     const userId = req.user?.id; // Lấy ID tác giả từ authMiddleware

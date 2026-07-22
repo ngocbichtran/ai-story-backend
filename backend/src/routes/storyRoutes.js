@@ -11,6 +11,10 @@ router.post("/create", authMiddleware, storyController.createStory);
 // GET /api/stories/list (Phải đặt TRƯỚC các route chứa tham số động :id)
 router.get("/list", authMiddleware, storyController.getStories);
 
+// AI ĐẢO NGƯỢC Ý TƯỞNG TỪ MÔ TẢ TRUYỆN
+// POST /api/stories/:storyId/reverse-description
+router.post("/:storyId/reverse-description", authMiddleware, storyController.reverseDescription);
+
 // Lấy thông tin chi tiết của 1 bộ truyện (MySQL + Mongo)
 // GET /api/stories/:storyId
 router.get("/:storyId", authMiddleware, storyController.getStoryDetails);

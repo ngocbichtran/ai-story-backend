@@ -1,7 +1,7 @@
 // src/controllers/storyController.js
 const db = require("../config/db"); // Pool từ db.js (bản mysql2/promise)
 const { getMongoDb } = require("../config/mongo");
-
+const axios = require("axios");
 // Lưu thông tin gốc truyện (MySQL)
 const saveStory = async (userId, title, description, coverImage) => {
   const [result] = await db.query(
@@ -409,6 +409,109 @@ exports.searchStories = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi thực hiện tìm kiếm tác phẩm.",
+    });
+  }
+};
+
+// ======================================================================
+// 3. AI ĐẢO NGƯỢC Ý TƯỞNG TỪ MÔ TẢ TRUYỆN (POST /api/stories/:storyId/reverse-description)
+// ======================================================================
+exports.reverseDescription = async (req, res) => {
+  try {
+    const { storyId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Bạn cần đăng nhập để sử dụng tính năng này.",
+      });
+    }
+
+    // 1. Kiểm tra tồn tại và quyền sở hữu trong MySQL
+    const story = await findStoryById(storyId);
+
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy truyện trong hệ thống.",
+      });
+    }
+
+    if (story.user_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: "Bạn không có quyền thao tác trên tác phẩm này.",
+      });
+    }
+
+    // 2. Bẫy dữ liệu: Bắt buộc tác phẩm phải có description không rỗng
+    if (!story.description || story.description.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        message: "Tác phẩm này chưa có mô tả/ý tưởng gốc để AI phân tích!",
+      });
+    }
+
+    console.log(`🚀 [N8N CALL] Gửi yêu cầu AI cho Story ID ${story.id}: "${story.title}"`);
+
+    // 3. Gọi Webhook n8n (Production URL)
+    const n8nResponse = await axios.post(
+      "https://n8n.baostory.fun/webhook/reverse-description",
+      {
+        storyId: story.id,
+        title: story.title,
+        description: story.description,
+      },
+      { timeout: 35000 }, // Chờ tối đa 35s cho AI sinh text
+    );
+
+    // 4. Bẫy bóc tách kết quả linh hoạt (Dù n8n trả về Array hay Object)
+    const resData = n8nResponse.data;
+    let reverseDescription = "";
+
+    if (Array.isArray(resData) && resData.length > 0) {
+      reverseDescription = resData[0].reverseDescription || resData[0].output || resData[0].text || "";
+    } else if (resData && typeof resData === "object") {
+      reverseDescription = resData.reverseDescription || resData.output || resData.text || "";
+    }
+
+    if (!reverseDescription || reverseDescription.trim() === "") {
+      return res.status(500).json({
+        success: false,
+        message: "AI chưa phản hồi đúng định dạng kết quả. Vui lòng kiểm tra lại workflow n8n.",
+      });
+    }
+
+    // 5. Cập nhật / Upsert vào MongoDB
+    const mongoDb = getMongoDb();
+    if (mongoDb) {
+      await mongoDb.collection("story_outlines").updateOne(
+        { storyId: Number(storyId) },
+        {
+          $set: {
+            reverseDescription: reverseDescription,
+            updatedAt: new Date(),
+          },
+        },
+        { upsert: true },
+      );
+    }
+
+    // 6. Trả kết quả đồng bộ cho Flutter / React
+    return res.status(200).json({
+      success: true,
+      message: "Đảo ngược ý tưởng thành công.",
+      data: {
+        storyId: Number(storyId),
+        reverseDescription,
+      },
+    });
+  } catch (err) {
+    console.error("❌ Lỗi xử lý tại reverseDescription:", err.response?.data || err.message);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi hệ thống khi kết nối máy chủ AI (n8n).",
     });
   }
 };

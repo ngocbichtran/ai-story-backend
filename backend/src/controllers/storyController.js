@@ -416,89 +416,40 @@ exports.searchStories = async (req, res) => {
 // ======================================================================
 // 3. AI ĐẢO NGƯỢC Ý TƯỞNG TỪ MÔ TẢ TRUYỆN (POST /api/stories/:storyId/reverse-description)
 // ======================================================================
-exports.reverseDescription = async (req, res) => {
+export const reverseDescriptionController = async (req, res) => {
   try {
     const { storyId } = req.params;
-    const userId = req.user?.id;
 
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Bạn cần đăng nhập để sử dụng tính năng này.",
-      });
-    }
-
-    // 1. Kiểm tra tồn tại và quyền sở hữu trong MySQL
-    const story = await findStoryById(storyId);
-
+    // 1. Kiểm tra / Lấy dữ liệu truyện từ DB
+    const story = await Story.findByPk(storyId);
     if (!story) {
       return res.status(404).json({
         success: false,
-        message: "Không tìm thấy truyện trong hệ thống.",
+        message: "Không tìm thấy tác phẩm trong hệ thống.",
       });
     }
 
-    if (story.user_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: "Bạn không có quyền thao tác trên tác phẩm này.",
-      });
-    }
-
-    // 2. Bẫy dữ liệu: Bắt buộc tác phẩm phải có description không rỗng
-    if (!story.description || story.description.trim() === "") {
+    // 2. Lấy mô tả (từ req.body hoặc từ DB)
+    const descriptionInput = req.body.description || story.description;
+    if (!descriptionInput) {
       return res.status(400).json({
         success: false,
-        message: "Tác phẩm này chưa có mô tả/ý tưởng gốc để AI phân tích!",
+        message: "Tác phẩm chưa có mô tả để đảo ngược.",
       });
     }
 
-    console.log(`🚀 [N8N CALL] Gửi yêu cầu AI cho Story ID ${story.id}: "${story.title}"`);
+    // 3. Gọi AI / Webhook n8n
+    // const reverseDescription = await callAIService(descriptionInput);
 
-    // 3. Gọi Webhook n8n (Production URL)
-    const n8nResponse = await axios.post(
-      "https://n8n.baostory.fun/webhook/reverse-description",
-      {
-        storyId: story.id,
-        title: story.title,
-        description: story.description,
-      },
-      { timeout: 35000 }, // Chờ tối đa 35s cho AI sinh text
-    );
-
-    // 4. Bẫy bóc tách kết quả linh hoạt (Dù n8n trả về Array hay Object)
-    const resData = n8nResponse.data;
-    let reverseDescription = "";
-
-    if (Array.isArray(resData) && resData.length > 0) {
-      reverseDescription = resData[0].reverseDescription || resData[0].output || resData[0].text || "";
-    } else if (resData && typeof resData === "object") {
-      reverseDescription = resData.reverseDescription || resData.output || resData.text || "";
-    }
-
-    if (!reverseDescription || reverseDescription.trim() === "") {
-      return res.status(500).json({
+    // 4. Kiểm tra kết quả AI
+    if (!reverseDescription) {
+      return res.status(502).json({
         success: false,
-        message: "AI chưa phản hồi đúng định dạng kết quả. Vui lòng kiểm tra lại workflow n8n.",
+        message: "Dịch vụ AI không phản hồi.",
       });
     }
 
-    // 5. Cập nhật / Upsert vào MongoDB
-    const mongoDb = getMongoDb();
-    if (mongoDb) {
-      await mongoDb.collection("story_outlines").updateOne(
-        { storyId: Number(storyId) },
-        {
-          $set: {
-            reverseDescription: reverseDescription,
-            updatedAt: new Date(),
-          },
-        },
-        { upsert: true },
-      );
-    }
-
-    // 6. Trả kết quả đồng bộ cho Flutter / React
+    // 5. Trả kết quả thành công 200
     return res.status(200).json({
       success: true,
       message: "Đảo ngược ý tưởng thành công.",
@@ -507,11 +458,11 @@ exports.reverseDescription = async (req, res) => {
         reverseDescription,
       },
     });
-  } catch (err) {
-    console.error("❌ Lỗi xử lý tại reverseDescription:", err.response?.data || err.message);
+  } catch (error) {
+    console.error("Lỗi Controller Reverse Description:", error);
     return res.status(500).json({
       success: false,
-      message: "Lỗi hệ thống khi kết nối máy chủ AI (n8n).",
+      message: error.message || "Lỗi máy chủ nội bộ.",
     });
   }
 };

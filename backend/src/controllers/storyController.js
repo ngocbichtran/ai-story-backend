@@ -414,55 +414,119 @@ exports.searchStories = async (req, res) => {
 };
 
 // ======================================================================
-// 3. AI ĐẢO NGƯỢC Ý TƯỞNG TỪ MÔ TẢ TRUYỆN (POST /api/stories/:storyId/reverse-description)
+// AI ĐẢO NGƯỢC Ý TƯỞNG TỪ MÔ TẢ TRUYỆN (POST /api/stories/:storyId/reverse-description)
 // ======================================================================
-export const reverseDescriptionController = async (req, res) => {
+exports.reverseDescriptionController = async (req, res) => {
   try {
     const { storyId } = req.params;
+    const userId = req.user?.id; // Lấy ID tác giả từ authMiddleware
 
-    // 1. Kiểm tra / Lấy dữ liệu truyện từ DB
-    const story = await Story.findByPk(storyId);
-    if (!story) {
-      return res.status(404).json({
+    if (!userId) {
+      return res.status(401).json({
         success: false,
-        message: "Không tìm thấy tác phẩm trong hệ thống.",
+        message: "Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.",
       });
     }
 
-    // 2. Lấy mô tả (từ req.body hoặc từ DB)
-    const descriptionInput = req.body.description || story.description;
-    if (!descriptionInput) {
+    if (!storyId || isNaN(Number(storyId))) {
       return res.status(400).json({
         success: false,
-        message: "Tác phẩm chưa có mô tả để đảo ngược.",
+        message: "Mã tác phẩm không hợp lệ.",
       });
     }
 
-    // 3. Gọi AI / Webhook n8n
-    // const reverseDescription = await callAIService(descriptionInput);
+    // 1. Kiểm tra sự tồn tại của tác phẩm trong MySQL Database
+    const [rows] = await db.query("SELECT id, title, description FROM stories WHERE id = ? AND user_id = ? AND deleted_at IS NULL", [storyId, userId]);
 
-    // 4. Kiểm tra kết quả AI
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy tác phẩm trong hệ thống hoặc bạn không có quyền truy cập.",
+      });
+    }
+
+    const story = rows[0];
+
+    // 2. Chuẩn hóa chuỗi mô tả (Ưu tiên lấy mô tả mới từ req.body gửi lên, nếu không có thì dùng từ DB)
+    const rawDescription = req.body?.description || story.description || "";
+    const cleanDescription = rawDescription.trim();
+
+    if (!cleanDescription) {
+      return res.status(400).json({
+        success: false,
+        message: "Tác phẩm chưa có nội dung mô tả để thực hiện đảo ngược.",
+      });
+    }
+
+    // 3. Gọi sang Webhook n8n / Service AI để xử lý đảo ngược ý tưởng
+    let reverseDescription = "";
+    try {
+      const n8nWebhookUrl = process.env.N8N_REVERSE_WEBHOOK_URL || "https://n8n.baostory.fun/webhook/reverse-description";
+
+      const aiResponse = await axios.post(
+        n8nWebhookUrl,
+        {
+          storyId: Number(storyId),
+          userId: Number(userId),
+          title: story.title,
+          description: cleanDescription,
+        },
+        {
+          headers: { "Content-Type": "application/json" },
+          timeout: 30000, // Timeout 30 giây chờ AI phản hồi
+        },
+      );
+
+      // Trích xuất kết quả linh hoạt từ n8n (hỗ trợ cả dạng root và dạng bọc trong object data)
+      reverseDescription = aiResponse.data?.reverseDescription || aiResponse.data?.data?.reverseDescription || "";
+    } catch (aiError) {
+      console.error("❌ Lỗi khi kết nối tới Webhook n8n AI:", aiError.message);
+      return res.status(502).json({
+        success: false,
+        message: "Dịch vụ AI hiện không phản hồi. Vui lòng thử lại sau.",
+      });
+    }
+
     if (!reverseDescription) {
       return res.status(502).json({
         success: false,
-        message: "Dịch vụ AI không phản hồi.",
+        message: "Dịch vụ AI không thể xử lý nội dung này.",
       });
     }
 
-    // 5. Trả kết quả thành công 200
+    // 4. (Tùy chọn) Lưu vết nhật ký AI reverse vào MongoDB nếu cần
+    try {
+      const mongoDb = getMongoDb();
+      if (mongoDb) {
+        await mongoDb.collection("story_ai_logs").insertOne({
+          story_id: Number(storyId),
+          user_id: Number(userId),
+          original_description: cleanDescription,
+          reverse_description: reverseDescription,
+          created_at: new Date(),
+        });
+      }
+    } catch (mongoErr) {
+      console.warn("⚠️ Không thể lưu log AI vào MongoDB:", mongoErr.message);
+    }
+
+    // 5. Trả kết quả bọc trong 'data' đúng đặc tả cấu trúc Frontend của bạn
+    const resultData = {
+      storyId: Number(storyId),
+      reverseDescription: reverseDescription,
+      updatedAt: new Date().toISOString(),
+    };
+
     return res.status(200).json({
       success: true,
       message: "Đảo ngược ý tưởng thành công.",
-      data: {
-        storyId: Number(storyId),
-        reverseDescription,
-      },
+      data: resultData, // Thỏa mãn đồng bộ với Axios Front-end đang dùng (res.data.data)
     });
   } catch (error) {
-    console.error("Lỗi Controller Reverse Description:", error);
+    console.error("❌ Lỗi nghiệp vụ tại hàm reverseDescriptionController:", error.message);
     return res.status(500).json({
       success: false,
-      message: error.message || "Lỗi máy chủ nội bộ.",
+      message: "Lỗi hệ thống khi thực hiện đảo ngược ý tưởng tác phẩm.",
     });
   }
 };

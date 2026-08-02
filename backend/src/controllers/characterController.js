@@ -143,6 +143,7 @@ exports.createCharacter = async (req, res) => {
       powerLevel: characterData.powerLevel || "",
       status: characterData.status || "alive",
       relationship: characterData.relationship || [],
+      isDeleted: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };

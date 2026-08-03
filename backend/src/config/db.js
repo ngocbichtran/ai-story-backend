@@ -20,12 +20,12 @@ const pool = mysql.createPool({
   try {
     // Thử lấy 1 kết nối từ pool để test
     const connection = await pool.getConnection();
-    console.log("🚀 [Database]: Kết nối đến Cloud Aiven MySQL thành công!");
+    console.log("[Database]: Kết nối đến Cloud Aiven MySQL thành công!");
 
     // Giải phóng kết nối trả lại cho pool sau khi test xong
     connection.release();
   } catch (error) {
-    console.error("❌ [Database]: Kết nối đến Cloud Aiven MySQL thất bại!");
+    console.error("[Database]: Kết nối đến Cloud Aiven MySQL thất bại!");
     console.error(`Lỗi chi tiết: ${error.message}`);
   }
 })();

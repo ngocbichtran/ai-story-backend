@@ -11,7 +11,6 @@ const saveNewChapterPlanMongo = async (cleanStoryId, cleanChapterNumber, planDat
     throw new Error("Mất kết nối cơ sở dữ liệu hệ thống (MongoDB).");
   }
 
-  // ⚠️ Lưu ý: Hãy đảm bảo tên collection này khớp với collection bạn dùng ở các hàm bên dưới
   const collection = mongoDb.collection("chapter_plans");
 
   // Chuẩn bị tài liệu chèn mới
@@ -83,7 +82,7 @@ exports.createChapterPlan = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm createChapterPlan:", error);
+    console.error("Lỗi tại hàm createChapterPlan:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi tạo kế hoạch chương.",
@@ -147,7 +146,7 @@ exports.getChapterPlanDetail = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm getChapterPlanDetail:", error);
+    console.error("Lỗi tại hàm getChapterPlanDetail:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lấy chi tiết kế hoạch chương.",
@@ -189,7 +188,7 @@ exports.getChapterPlansByStory = async (req, res) => {
       data: plansList,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm getChapterPlansByStory:", error);
+    console.error("Lỗi tại hàm getChapterPlansByStory:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lấy danh sách kế hoạch chương.",
@@ -283,7 +282,7 @@ exports.updateChapterPlan = async (req, res) => {
       modifiedCount: modifiedCount,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm updateChapterPlan:", error);
+    console.error("Lỗi tại hàm updateChapterPlan:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi cập nhật kế hoạch chương.",
@@ -367,7 +366,7 @@ exports.deleteChapterPlan = async (req, res) => {
       deletedCount: deletedCount,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm deleteChapterPlan:", error);
+    console.error("Lỗi tại hàm deleteChapterPlan:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi xóa kế hoạch chương.",

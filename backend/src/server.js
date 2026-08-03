@@ -38,7 +38,8 @@ app.use("/api/world", worldRoutes); // Thế giới
 app.use("/api/characters", characterRoutes); // Nhân vật
 app.use("/api/chapterPlan", chapterPlanRoutes); // Kế hoạch chương
 app.use("/api/scenes", sceneRoutes); // Kế hoạch chương
-// 5. KHỞI CHẠY SERVER CHUẨN (Gộp duy nhất một luồng lắng nghe)
+
+// 5. KHỞI CHẠY SERVER CHUẨN
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);

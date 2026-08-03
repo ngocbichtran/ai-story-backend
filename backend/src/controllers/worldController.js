@@ -1,6 +1,6 @@
 const db = require("../config/db"); // Kết nối MySQL
 const { getMongoDb } = require("../config/mongo"); // Kết nối MongoDB Atlas
-const { ObjectId } = require("mongodb"); // 👈 Lấy trực tiếp ObjectId từ thư viện mongodb chính hãng
+const { ObjectId } = require("mongodb"); // Lấy trực tiếp ObjectId từ thư viện mongodb chính hãng
 // =========================================================================
 // 1. KHỞI TẠO THẾ GIỚI / BỐI CẢNH MỚI (Tương thích WorldForm)
 // =========================================================================
@@ -72,7 +72,7 @@ exports.createWorld = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm createWorld:", error.message);
+    console.error("Lỗi tại hàm createWorld:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi khởi tạo bối cảnh thế giới.",
@@ -132,7 +132,7 @@ exports.getWorldsByStory = async (req, res) => {
       data: responseData,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại getWorldsByStory:", error.message);
+    console.error("Lỗi tại getWorldsByStory:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lấy danh sách thế giới.",
@@ -211,7 +211,7 @@ exports.updateWorld = async (req, res) => {
       modifiedCount: updateResult.modifiedCount,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm updateWorld:", error.message);
+    console.error("Lỗi tại hàm updateWorld:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi cập nhật bối cảnh thế giới.",
@@ -282,7 +282,7 @@ exports.getWorldDetail = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi chi tiết tại hàm getWorldDetail:", error);
+    console.error("Lỗi chi tiết tại hàm getWorldDetail:", error);
     return res.status(400).json({
       success: false,
       message: "Yêu cầu không hợp lệ (Bad Request).",
@@ -342,7 +342,7 @@ exports.deleteWorld = async (req, res) => {
       deletedCount: deleteResult.deletedCount,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm deleteWorld:", error);
+    console.error("Lỗi tại hàm deleteWorld:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi xóa bối cảnh thế giới.",

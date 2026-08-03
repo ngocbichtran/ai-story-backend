@@ -71,7 +71,6 @@ exports.createScene = async (req, res) => {
     }
 
     // Bước 3: Kiểm tra nhanh tài liệu chương cha (hoặc kế hoạch chương) có tồn tại hay không
-    // (Trong hệ thống của bạn, collection quản lý kế hoạch/chương cha là chapter_plans hoặc chapters)
     const parentCollection = mongoDb.collection("chapter_plans");
 
     let queryParent = {};
@@ -107,7 +106,7 @@ exports.createScene = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm createScene:", error);
+    console.error("Lỗi tại hàm createScene:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi tạo phân cảnh mới.",
@@ -188,7 +187,7 @@ exports.getScenesByChapter = async (req, res) => {
       data: scenesList, // Mảng chứa danh sách các phân cảnh đã được sắp xếp theo đúng thứ tự
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm getScenesByChapter:", error);
+    console.error("Lỗi tại hàm getScenesByChapter:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lấy danh sách phân cảnh theo chương.",
@@ -300,7 +299,7 @@ exports.updateScene = async (req, res) => {
       modifiedCount: modifiedCount,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm updateScene:", error);
+    console.error("Lỗi tại hàm updateScene:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi cập nhật phân cảnh.",
@@ -380,7 +379,7 @@ exports.getSceneDetail = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm getSceneDetail:", error);
+    console.error("Lỗi tại hàm getSceneDetail:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lấy chi tiết phân cảnh.",
@@ -463,7 +462,7 @@ exports.deleteScene = async (req, res) => {
       deletedCount: deletedCount,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm deleteScene:", error);
+    console.error("Lỗi tại hàm deleteScene:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi xóa phân cảnh.",

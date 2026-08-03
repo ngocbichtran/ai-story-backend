@@ -161,7 +161,7 @@ exports.createCharacter = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm createCharacter:", error);
+    console.error("Lỗi tại hàm createCharacter:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi khởi tạo nhân vật.",
@@ -236,7 +236,7 @@ exports.getCharacterDetail = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi chi tiết tại hàm getCharacterDetail:", error);
+    console.error("Lỗi chi tiết tại hàm getCharacterDetail:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lấy chi tiết nhân vật.",
@@ -313,7 +313,7 @@ exports.getCharactersByStory = async (req, res) => {
       data: charactersList,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm getCharactersByStory:", error);
+    console.error("Lỗi tại hàm getCharactersByStory:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lấy danh sách nhân vật.",
@@ -369,7 +369,7 @@ exports.updateCharacter = async (req, res) => {
       modifiedCount: modifiedCount,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm updateCharacter:", error);
+    console.error("Lỗi tại hàm updateCharacter:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi cập nhật thông tin nhân vật.",
@@ -411,7 +411,7 @@ exports.deleteCharacter = async (req, res) => {
       } catch (e) {}
     }
 
-    // 🟢 Sửa lại cú pháp query tìm kiếm (loại trừ các bản ghi đã bị xóa mềm)
+    // Cú pháp query tìm kiếm (loại trừ các bản ghi đã bị xóa mềm)
     const existingCharacter = await collection.findOne({
       $or: queryConditions,
       isDeleted: { $ne: true },
@@ -439,7 +439,7 @@ exports.deleteCharacter = async (req, res) => {
       modifiedCount: modifiedCount,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm deleteCharacter:", error);
+    console.error("Lỗi tại hàm deleteCharacter:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi xóa nhân vật.",

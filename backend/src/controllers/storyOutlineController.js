@@ -40,7 +40,7 @@ exports.getStoryOutline = async (req, res) => {
       data: outline,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm getStoryOutline:", error.message);
+    console.error("Lỗi tại hàm getStoryOutline:", error.message);
     return res.status(500).json({ success: false, message: "Lỗi hệ thống khi tải đề cương." });
   }
 };
@@ -80,7 +80,7 @@ exports.updateStoryOutline = async (req, res) => {
       message: "Lưu thông tin đề cương khung sườn tác phẩm thành công.",
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm updateStoryOutline:", error.message);
+    console.error("Lỗi tại hàm updateStoryOutline:", error.message);
     return res.status(500).json({ success: false, message: "Lỗi hệ thống khi lưu đề cương." });
   }
 };

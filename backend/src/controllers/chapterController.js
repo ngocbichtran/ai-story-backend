@@ -1,4 +1,4 @@
-// 1. ĐƯA TẤT CẢ REQUIRE LÊN ĐẦU FILE (Tránh tuyệt đối lỗi cú pháp)
+// 1. ĐƯA TẤT CẢ REQUIRE LÊN ĐẦU FILE
 const db = require("../config/db");
 const { getMongoDb } = require("../config/mongo"); // Thư viện kết nối MongoDB Atlas đám mây
 const n8nService = require("../services/n8nService");
@@ -88,7 +88,7 @@ exports.createChapter = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm createChapter:", error.message);
+    console.error("Lỗi tại hàm createChapter:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi khởi tạo chương truyện mới.",
@@ -154,7 +154,7 @@ exports.getDisplayChapter = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi getDisplayChapter:", error.message);
+    console.error("Lỗi getDisplayChapter:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lấy dữ liệu chương.",
@@ -219,7 +219,7 @@ exports.deleteChapterSoft = async (req, res) => {
       message: `Đã xóa chương ${cleanChapterNumber} và tự động dồn số thứ tự các chương sau thành công.`,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm deleteChapterSoft:", error.message);
+    console.error("Lỗi tại hàm deleteChapterSoft:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi thực hiện xóa chương.",
@@ -275,7 +275,7 @@ exports.getChaptersByStory = async (req, res) => {
       data: responseData,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại getChaptersByStory:", error.message);
+    console.error("Lỗi tại getChaptersByStory:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lấy danh sách chương.",
@@ -332,7 +332,7 @@ exports.updateChapterContent = async (req, res) => {
       wordCount: wordCount,
     });
 
-    // 🌟 2. QUẢN LÝ LỊCH SỬ PHIÊN BẢN (GIỚI HẠN TỐI ĐA 10 BẢN GHI)
+    // 2. QUẢN LÝ LỊCH SỬ PHIÊN BẢN (GIỚI HẠN TỐI ĐA 10 BẢN GHI)
     const historyCollection = mongoDb.collection("chapter_versions");
 
     // Đếm số lượng phiên bản hiện có của chương này
@@ -375,7 +375,7 @@ exports.updateChapterContent = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm updateChapterContent:", error.message);
+    console.error("Lỗi tại hàm updateChapterContent:", error.message);
     return res.status(500).json({ success: false, message: "Lỗi hệ thống khi cập nhật." });
   }
 };
@@ -426,7 +426,7 @@ exports.restoreChapterVersion = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm restoreChapterVersion:", error.message);
+    console.error("Lỗi tại hàm restoreChapterVersion:", error.message);
     return res.status(500).json({ success: false, message: "Lỗi hệ thống khi khôi phục phiên bản." });
   }
 };
@@ -447,7 +447,7 @@ exports.saveUpdatedChapterContentMongo = async ({ storyId, chapterNumber, update
     updatedAt: new Date(),
   };
 
-  // 🌟 ĐÃ FIX: Cập nhật dựa trên điều kiện linh hoạt chuẩn camelCase
+  // Cập nhật dựa trên điều kiện linh hoạt chuẩn camelCase
   const result = await collection.updateOne(
     {
       $or: [
@@ -527,7 +527,7 @@ exports.autoSaveChapterContent = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm autoSaveChapterContent:", error.message);
+    console.error("Lỗi tại hàm autoSaveChapterContent:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lưu nháp tự động.",
@@ -643,7 +643,7 @@ exports.getChapterHistory = async (req, res) => {
       data: finalResult,
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm getChapterHistory:", error.message);
+    console.error("Lỗi tại hàm getChapterHistory:", error.message);
     return res.status(500).json({ success: false, message: "Lỗi hệ thống khi tải lịch sử phiên bản." });
   }
 };

@@ -197,7 +197,7 @@ exports.getStoryDetails = async (req, res) => {
       data: storyDetail,
     });
   } catch (error) {
-    console.error("❌ Lỗi hệ thống tại hàm getStoryDetails:", error);
+    console.error("Lỗi hệ thống tại hàm getStoryDetails:", error);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi tải thông tin chi tiết tác phẩm.",
@@ -230,7 +230,7 @@ exports.getStories = async (req, res) => {
 
     return res.status(200).json({ success: true, data: rows });
   } catch (error) {
-    console.error("❌ Lỗi tại getStories theo tác giả:", error.message);
+    console.error("Lỗi tại getStories theo tác giả:", error.message);
     return res.status(500).json({ success: false, message: "Lỗi hệ thống khi lấy danh sách truyện." });
   }
 };
@@ -317,7 +317,7 @@ exports.updateStory = async (req, res) => {
     // NẾU CÓ BẤT KỲ LỖI NÀO XẢY RA, HOÀN TÁC TOÀN BỘ LẬP TỨC
     await connection.rollback();
 
-    console.error("❌ Lỗi hệ thống tại hàm updateStory:", error.message);
+    console.error("Lỗi hệ thống tại hàm updateStory:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi cập nhật tác phẩm.",
@@ -369,7 +369,7 @@ exports.deleteStory = async (req, res) => {
       message: "Đã xóa tác phẩm thành công vào kho lưu trữ.",
     });
   } catch (error) {
-    console.error("❌ Lỗi tại hàm deleteStory:", error.message);
+    console.error("Lỗi tại hàm deleteStory:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi thực hiện xóa tác phẩm.",
@@ -405,7 +405,7 @@ exports.searchStories = async (req, res) => {
       data: storiesList, // Đồng bộ với cấu trúc Axios Front-end đang dùng
     });
   } catch (error) {
-    console.error("❌ Lỗi nghiệp vụ tại hàm searchStories:", error.message);
+    console.error("Lỗi nghiệp vụ tại hàm searchStories:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi thực hiện tìm kiếm tác phẩm.",
@@ -480,7 +480,7 @@ exports.reverseDescription = async (req, res) => {
       // Trích xuất kết quả linh hoạt từ n8n (hỗ trợ cả dạng root và dạng bọc trong object data)
       reverseDescription = aiResponse.data?.reverseDescription || aiResponse.data?.data?.reverseDescription || "";
     } catch (aiError) {
-      console.error("❌ Lỗi khi kết nối tới Webhook n8n AI:", aiError.message);
+      console.error("Lỗi khi kết nối tới Webhook n8n AI:", aiError.message);
       return res.status(502).json({
         success: false,
         message: "Dịch vụ AI hiện không phản hồi. Vui lòng thử lại sau.",
@@ -494,7 +494,7 @@ exports.reverseDescription = async (req, res) => {
       });
     }
 
-    // 4. (Tùy chọn) Lưu vết nhật ký AI reverse vào MongoDB nếu cần
+    // 4. Lưu vết nhật ký AI reverse vào MongoDB
     try {
       const mongoDb = getMongoDb();
       if (mongoDb) {
@@ -507,10 +507,10 @@ exports.reverseDescription = async (req, res) => {
         });
       }
     } catch (mongoErr) {
-      console.warn("⚠️ Không thể lưu log AI vào MongoDB:", mongoErr.message);
+      console.warn("Không thể lưu log AI vào MongoDB:", mongoErr.message);
     }
 
-    // 5. Trả kết quả bọc trong 'data' đúng đặc tả cấu trúc Frontend của bạn
+    // 5. Trả kết quả bọc trong 'data'
     const resultData = {
       storyId: Number(storyId),
       reverseDescription: reverseDescription,
@@ -523,7 +523,7 @@ exports.reverseDescription = async (req, res) => {
       data: resultData, // Thỏa mãn đồng bộ với Axios Front-end đang dùng (res.data.data)
     });
   } catch (error) {
-    console.error("❌ Lỗi nghiệp vụ tại hàm reverseDescriptionController:", error.message);
+    console.error("Lỗi nghiệp vụ tại hàm reverseDescriptionController:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi thực hiện đảo ngược ý tưởng tác phẩm.",

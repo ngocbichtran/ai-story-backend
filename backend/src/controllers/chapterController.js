@@ -651,82 +651,34 @@ exports.getChapterHistory = async (req, res) => {
 // 7. N8N / SPELL CHECK
 // =========================================================================
 exports.spellCheck = async (req, res) => {
-  const chapterId = req.params.id;
-
-  const storyId = req.body.storyId || req.body.story_id;
-  const chapterNumber = req.body.chapterNumber || req.body.chapter_number;
-  const { content } = req.body;
-
-  if (!storyId || !chapterNumber || !content) {
-    return res.status(400).json({ success: false, message: "Thiếu thông tin storyId, chapterNumber hoặc nội dung bản nháp." });
-  }
-
   try {
-    const [chapterRows] = await db.query(`SELECT id FROM stories WHERE id = ?`, [chapterId]);
-    if (chapterRows.length === 0) {
-      return res.status(404).json({ success: false, error: `Không tìm thấy chương ứng với ID mục lục: ${chapterId}` });
-    }
+    const { storyId, chapterNumber } = req.body;
 
-    const mongoDb = getMongoDb();
-    const chapterCollection = mongoDb.collection("chapters_content");
-
-    const queryCondition = { storyId: Number(storyId), chapterNumber: Number(chapterNumber) };
-    const chapterDocument = await chapterCollection.findOne(queryCondition);
-
-    if (!chapterDocument) {
-      await chapterCollection.insertOne({
-        ...queryCondition,
-        content: content,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+    if (!storyId || !chapterNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu storyId hoặc chapterNumber",
       });
-      console.log(`[MongoDB Atlas] ➕ Đã khởi tạo mới văn bản gốc cho chương ${chapterNumber}`);
-    } else {
-      await chapterCollection.updateOne(queryCondition, {
-        $set: { content: content, updatedAt: new Date() },
-      });
-      console.log(`[MongoDB Atlas] 🔄 Đã đồng bộ cập nhật bản thảo thô cho chương ${chapterNumber}`);
     }
 
-    const N8N_EDIT_ART_URL = process.env.N8N_EDIT_ART_URL;
-    let polishedText = content;
-    let finalStatus = "EDITING";
+    const payload = {
+      story_id: Number(storyId),
+      chapter_number: Number(chapterNumber),
+    };
 
-    if (N8N_EDIT_ART_URL) {
-      const n8nPayload = {
-        storyId: Number(storyId),
-        chapterNumber: Number(chapterNumber),
-        content,
-      };
+    const result = await n8nService.triggerN8nWorkflow(process.env.N8N_EDIT_ART_URL, payload);
 
-      const n8nResponse = await n8nService.triggerN8nWorkflow(N8N_EDIT_ART_URL, n8nPayload);
-
-      if (n8nResponse) {
-        const resData = Array.isArray(n8nResponse) ? n8nResponse[0] : n8nResponse;
-        polishedText = resData.editedContent || content;
-        if (resData.status) {
-          finalStatus = resData.status;
-        }
-      }
-    } else {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      polishedText = content + `\n\n*(Đã được AI rà soát lỗi chính tả Chương ${chapterNumber} - Chế độ Mockup)*`;
-    }
-
-    await db.query(`UPDATE chapters_index SET status = ? WHERE id = ?`, [finalStatus, chapterId]);
-
-    return res.status(200).json({
+    return res.json({
       success: true,
-      message: "Biên tập sửa lỗi chính tả và đồng bộ đám mây thành công.",
-      data: {
-        storyId: Number(storyId),
-        chapterNumber: Number(chapterNumber),
-        status: finalStatus,
-        polishedContent: polishedText,
-      },
+      message: "Sửa chính tả thành công.",
+      data: result,
     });
-  } catch (error) {
-    console.error("Lỗi tại hàm spellCheck:", error);
-    return res.status(500).json({ success: false, error: error.message });
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi AI",
+    });
   }
 };

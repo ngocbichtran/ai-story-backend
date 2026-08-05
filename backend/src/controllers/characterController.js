@@ -21,23 +21,27 @@ const saveUpdatedCharacter = async (characterId, updateData) => {
     } catch (e) {}
   }
 
-  // Chuẩn bị payload cập nhật động toàn bộ các trường thuộc tính
+  // Chuẩn bị payload cập nhật động toàn bộ các trường thuộc tính theo schema mới
   const updatePayload = {
     updatedAt: new Date(),
   };
 
   if (updateData.name !== undefined) updatePayload.name = updateData.name.trim();
-  if (updateData.role !== undefined) updatePayload.role = updateData.role.trim();
   if (updateData.gender !== undefined) updatePayload.gender = updateData.gender;
   if (updateData.age !== undefined) updatePayload.age = updateData.age;
+  if (updateData.status !== undefined) updatePayload.status = updateData.status;
   if (updateData.occupation !== undefined) updatePayload.occupation = updateData.occupation;
+  if (updateData.role !== undefined) updatePayload.role = updateData.role.trim();
   if (updateData.appearance !== undefined) updatePayload.appearance = updateData.appearance;
   if (updateData.personality !== undefined) updatePayload.personality = updateData.personality;
   if (updateData.background !== undefined) updatePayload.background = updateData.background;
   if (updateData.goal !== undefined) updatePayload.goal = updateData.goal;
-  if (updateData.powerLevel !== undefined) updatePayload.powerLevel = updateData.powerLevel;
-  if (updateData.status !== undefined) updatePayload.status = updateData.status;
+  if (updateData.ability !== undefined) updatePayload.ability = updateData.ability;
+  if (updateData.development !== undefined) updatePayload.development = updateData.development;
+  if (updateData.currentLocation !== undefined) updatePayload.currentLocation = updateData.currentLocation;
   if (updateData.relationship !== undefined) updatePayload.relationship = updateData.relationship;
+  if (updateData.avatar !== undefined) updatePayload.avatar = updateData.avatar;
+  if (updateData.tags !== undefined) updatePayload.tags = updateData.tags;
 
   // Thực thi câu lệnh cập nhật động trong MongoDB sử dụng toán tử $set
   const result = await collection.updateOne({ $or: queryConditions }, { $set: updatePayload });
@@ -97,7 +101,7 @@ exports.createCharacter = async (req, res) => {
       });
     }
 
-    // Bước 2: Kiểm tra tính hợp lệ của các trường bắt buộc (Tên nhân vật, Vai trò...)
+    // Bước 2: Kiểm tra tính hợp lệ của các trường bắt buộc
     const { name, role } = characterData;
     if (!storyId || !name || !name.trim() || !role || !role.trim()) {
       return res.status(400).json({
@@ -128,22 +132,37 @@ exports.createCharacter = async (req, res) => {
 
     const collection = mongoDb.collection("characters");
 
-    // Bước 4: Gọi tầng Repository (Lưu vào Collection characters của MongoDB - 016_F2)
+    // Bước 4: Khởi tạo document theo đúng Schema chuẩn
     const newCharacterDoc = {
       storyId: cleanStoryId,
+
       name: name.trim(),
-      role: role.trim(),
       gender: characterData.gender || "",
-      age: characterData.age || "",
+      age: characterData.age ?? 0,
+
+      status: characterData.status || "alive",
+      isDeleted: false,
+
       occupation: characterData.occupation || "",
-      personality: characterData.personality || "",
+      role: role.trim(),
+
       appearance: characterData.appearance || "",
+      personality: characterData.personality || "",
       background: characterData.background || "",
       goal: characterData.goal || "",
-      powerLevel: characterData.powerLevel || "",
-      status: characterData.status || "alive",
+
+      ability: characterData.ability || "",
+      development: characterData.development || "",
+
+      currentLocation: characterData.currentLocation || "",
+
       relationship: characterData.relationship || [],
-      isDeleted: false,
+
+      avatar: characterData.avatar || "",
+
+      tags: characterData.tags || [],
+
+      createdBy: userId,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -152,10 +171,10 @@ exports.createCharacter = async (req, res) => {
 
     // Bước 5: Trả về phản hồi JSON thông báo thành công kèm mã định danh mới
     return res.status(201).json({
-      success: true, // Output của 016_F1
+      success: true,
       message: "Khởi tạo nhân vật mới thành công",
       data: {
-        id: insertResult.insertedId.toString(), // Output insertedId của 016_F2
+        id: insertResult.insertedId.toString(),
         storyId: cleanStoryId,
         name: name.trim(),
       },
@@ -205,9 +224,9 @@ exports.getCharacterDetail = async (req, res) => {
       } catch (err) {}
     }
 
-    const character = await collection.findOne({ $or: queryConditions });
+    const char = await collection.findOne({ $or: queryConditions });
 
-    if (!character) {
+    if (!char) {
       return res.status(404).json({
         success: false,
         message: "Không tìm thấy thông tin chi tiết nhân vật.",
@@ -217,22 +236,38 @@ exports.getCharacterDetail = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: {
-        id: character._id.toString(),
-        storyId: character.storyId,
-        name: character.name || "",
-        role: character.role || "",
-        gender: character.gender || "",
-        age: character.age || "",
-        occupation: character.occupation || "",
-        appearance: character.appearance || "",
-        personality: character.personality || "",
-        background: character.background || "",
-        goal: character.goal || "",
-        powerLevel: character.powerLevel || "",
-        status: character.status || "alive",
-        relationship: character.relationship || [],
-        createdAt: character.createdAt,
-        updatedAt: character.updatedAt,
+        id: char._id.toString(),
+        storyId: char.storyId,
+
+        name: char.name || "",
+        gender: char.gender || "",
+        age: char.age ?? 0,
+
+        status: char.status || "alive",
+        isDeleted: char.isDeleted ?? false,
+
+        occupation: char.occupation || "",
+        role: char.role || "",
+
+        appearance: char.appearance || "",
+        personality: char.personality || "",
+        background: char.background || "",
+        goal: char.goal || "",
+
+        ability: char.ability || "",
+        development: char.development || "",
+
+        currentLocation: char.currentLocation || "",
+
+        relationship: char.relationship || [],
+
+        avatar: char.avatar || "",
+
+        tags: char.tags || [],
+
+        createdBy: char.createdBy,
+        createdAt: char.createdAt,
+        updatedAt: char.updatedAt,
       },
     });
   } catch (error) {
@@ -310,7 +345,13 @@ exports.getCharactersByStory = async (req, res) => {
       ability: char.ability || "",
       development: char.development || "",
 
+      currentLocation: char.currentLocation || "",
+
       relationship: char.relationship || [],
+
+      avatar: char.avatar || "",
+
+      tags: char.tags || [],
 
       createdBy: char.createdBy,
       createdAt: char.createdAt,
@@ -336,7 +377,6 @@ exports.getCharactersByStory = async (req, res) => {
 // =========================================================================
 exports.updateCharacter = async (req, res) => {
   try {
-    // Bước 1: Tiếp nhận characterId từ req.params và updateData từ req.body
     const { characterId } = req.params;
     const updateData = req.body;
 
@@ -347,7 +387,6 @@ exports.updateCharacter = async (req, res) => {
       });
     }
 
-    // Bước 2: Kiểm tra và xác thực tính hợp lệ cơ bản của dữ liệu chỉnh sửa
     if (updateData.name !== undefined && !updateData.name.trim()) {
       return res.status(400).json({
         success: false,
@@ -362,10 +401,8 @@ exports.updateCharacter = async (req, res) => {
       });
     }
 
-    // Bước 3: Gọi hàm xử lý tương tác cập nhật dữ liệu (019_F2 nội bộ)
     const modifiedCount = await saveUpdatedCharacter(characterId, updateData);
 
-    // Bước 4: Kiểm tra kết quả và trả về phản hồi JSON cho Client
     if (modifiedCount === 0) {
       return res.status(404).json({
         success: false,
@@ -374,7 +411,7 @@ exports.updateCharacter = async (req, res) => {
     }
 
     return res.status(200).json({
-      success: true, // Output của 019_F1
+      success: true,
       message: "Cập nhật thông tin nhân vật thành công!",
       modifiedCount: modifiedCount,
     });
@@ -421,7 +458,6 @@ exports.deleteCharacter = async (req, res) => {
       } catch (e) {}
     }
 
-    // Cú pháp query tìm kiếm (loại trừ các bản ghi đã bị xóa mềm)
     const existingCharacter = await collection.findOne({
       $or: queryConditions,
       isDeleted: { $ne: true },

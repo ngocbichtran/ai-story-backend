@@ -145,7 +145,6 @@ exports.createCharacter = async (req, res) => {
 
       occupation: characterData.occupation || "",
       role: role.trim(),
-
       appearance: characterData.appearance || "",
       personality: characterData.personality || "",
       background: characterData.background || "",

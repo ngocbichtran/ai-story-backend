@@ -291,18 +291,28 @@ exports.getCharactersByStory = async (req, res) => {
     const charactersList = charactersListRaw.map((char) => ({
       id: char._id.toString(),
       storyId: char.storyId,
+
       name: char.name || "",
-      role: char.role || "",
       gender: char.gender || "",
-      age: char.age || "",
+      age: char.age ?? 0,
+
+      status: char.status || "alive",
+      isDeleted: char.isDeleted ?? false,
+
       occupation: char.occupation || "",
-      personality: char.personality || "",
+      role: char.role || "",
+
       appearance: char.appearance || "",
+      personality: char.personality || "",
       background: char.background || "",
       goal: char.goal || "",
-      powerLevel: char.powerLevel || "",
-      status: char.status || "alive",
+
+      ability: char.ability || "",
+      development: char.development || "",
+
       relationship: char.relationship || [],
+
+      createdBy: char.createdBy,
       createdAt: char.createdAt,
       updatedAt: char.updatedAt,
     }));

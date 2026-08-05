@@ -77,7 +77,7 @@ exports.createStory = async (req, res) => {
       await saveStoryGenres(storyId, genreIds);
     }
 
-    // Gọi hàm khởi tạo Mongo thuần
+    // Gọi hàm khởi tạo cốt truyện Mongo thuần
     await initStoryOutline(storyId);
 
     return res.status(201).json({

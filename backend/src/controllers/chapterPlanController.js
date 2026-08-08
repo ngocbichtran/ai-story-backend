@@ -1,94 +1,7 @@
 const db = require("../config/db"); // Kết nối MySQL để kiểm tra story
 const { getMongoDb } = require("../config/mongo"); // Kết nối MongoDB Atlas
 const { ObjectId } = require("mongodb");
-
-// =========================================================================
-// HÀM REPOSITORY Tạo Kế hoạch: saveNewChapterPlanMongo()
-// =========================================================================
-const saveNewChapterPlanMongo = async (cleanStoryId, cleanChapterNumber, planData) => {
-  const mongoDb = getMongoDb();
-  if (!mongoDb) {
-    throw new Error("Mất kết nối cơ sở dữ liệu hệ thống (MongoDB).");
-  }
-
-  const collection = mongoDb.collection("chapter_plans");
-
-  // Chuẩn bị tài liệu chèn mới
-  const newChapterPlanDoc = {
-    storyId: cleanStoryId,
-    chapterNumber: cleanChapterNumber,
-    ...planData, // Trải phẳng đối tượng chi tiết kế hoạch của chương
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-
-  // Thực thi câu lệnh chèn bản ghi vào MongoDB
-  const insertResult = await collection.insertOne(newChapterPlanDoc);
-
-  // Trả về tài liệu vừa chèn hoặc insertedId để Controller dễ xử lý trả về cho Frontend
-  return {
-    _id: insertResult.insertedId,
-    ...newChapterPlanDoc,
-  };
-};
-
-// =========================================================================
-// HÀM CONTROLLER Tạo Kế Hoạch: createChapterPlan()
-// =========================================================================
-exports.createChapterPlan = async (req, res) => {
-  try {
-    const { storyId, chapterNumber, planData } = req.body;
-
-    if (!storyId || !chapterNumber || !planData) {
-      return res.status(400).json({
-        success: false,
-        message: "Vui lòng cung cấp đầy đủ thông tin storyId, chapterNumber và planData.",
-      });
-    }
-
-    const cleanStoryId = Number(storyId);
-    const cleanChapterNumber = Number(chapterNumber);
-
-    if (isNaN(cleanChapterNumber) || cleanChapterNumber <= 0 || !Number.isInteger(cleanChapterNumber)) {
-      return res.status(400).json({
-        success: false,
-        message: "Số thứ tự chương (chapterNumber) phải là một số nguyên dương lớn hơn 0.",
-      });
-    }
-
-    // Truy vấn kiểm tra bộ truyện gốc có tồn tại trong MySQL hay không
-    const [storyCheck] = await db.query("SELECT COUNT(*) as count FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
-
-    if (storyCheck[0].count === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Bộ truyện không tồn tại trên hệ thống.",
-      });
-    }
-
-    // Gọi hàm tương tác xuống tầng Repository MongoDB
-    const createdPlan = await saveNewChapterPlanMongo(cleanStoryId, cleanChapterNumber, planData);
-
-    // Trả về kết quả kèm object data chứa _id để Frontend cập nhật State mượt mà
-    return res.status(201).json({
-      success: true,
-      message: "Tạo kế hoạch chương mới thành công!",
-      data: {
-        _id: createdPlan._id.toString(),
-        storyId: createdPlan.storyId,
-        chapterNumber: createdPlan.chapterNumber,
-        versionName: createdPlan.versionName || createdPlan.title || "",
-        summary: createdPlan.summary || "",
-      },
-    });
-  } catch (error) {
-    console.error("Lỗi tại hàm createChapterPlan:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Lỗi hệ thống khi tạo kế hoạch chương.",
-    });
-  }
-};
+const axios = require("axios");
 
 // =========================================================================
 // HÀM REPOSITORY Lấy chi tiết 1 kế hoạch chương: fetchChapterPlanDetailById()
@@ -197,7 +110,7 @@ exports.getChapterPlansByStory = async (req, res) => {
 };
 
 // =========================================================================
-// HÀM REPOSITORY Chỉnh sửa kế hoạch chương: saveUpdatedChapterPlan() (Đặc tả 029_F2)
+// HÀM REPOSITORY Chỉnh sửa kế hoạch chương: saveUpdatedChapterPlan()
 // =========================================================================
 const saveUpdatedChapterPlan = async (chapterId, planData) => {
   const mongoDb = getMongoDb();
@@ -205,35 +118,30 @@ const saveUpdatedChapterPlan = async (chapterId, planData) => {
     throw new Error("Mất kết nối cơ sở dữ liệu hệ thống (MongoDB).");
   }
 
-  // Sử dụng Collection chapter_plans (hoặc chapters_content tùy thiết kế của bạn)
   const collection = mongoDb.collection("chapter_plans");
 
-  // Kiểm tra tính hợp lệ của chapterId (hoặc planId) trước khi khởi tạo ObjectId
   if (!ObjectId.isValid(chapterId)) {
     return 0;
   }
 
-  // Thực thi câu lệnh cập nhật động các trường thuộc tính bằng toán tử $set
   const updateResult = await collection.updateOne(
     { _id: new ObjectId(chapterId) },
     {
       $set: {
-        ...planData, // Cập nhật các trường thông tin planData truyền lên
-        updatedAt: new Date(), // Tự động cập nhật thời gian chỉnh sửa mới nhất
+        ...planData,
+        updatedAt: new Date(),
       },
     },
   );
 
-  // Trả về số lượng bản ghi đã được chỉnh sửa và cập nhật thành công (modifiedCount)
   return updateResult.modifiedCount;
 };
 
 // =========================================================================
-// HÀM CONTROLLER chỉnh sửa kế hoạch chương: updateChapterPlan() (Đặc tả 029_F1)
+// HÀM CONTROLLER chỉnh sửa kế hoạch chương: updateChapterPlan()
 // =========================================================================
 exports.updateChapterPlan = async (req, res) => {
   try {
-    // Bước 1: Tiếp nhận chapterId từ req.params và planData từ req.body
     const { chapterId } = req.params;
     const { planData } = req.body;
 
@@ -244,7 +152,6 @@ exports.updateChapterPlan = async (req, res) => {
       });
     }
 
-    // Bước 2: Kiểm tra và xác thực định dạng dữ liệu cơ bản
     if (!ObjectId.isValid(chapterId)) {
       return res.status(400).json({
         success: false,
@@ -261,8 +168,6 @@ exports.updateChapterPlan = async (req, res) => {
     }
 
     const collection = mongoDb.collection("chapter_plans");
-
-    // Bước 3: Kiểm tra nhanh dưới tầng Repository xem bản ghi có tồn tại hay không
     const existingPlan = await collection.findOne({ _id: new ObjectId(chapterId) });
 
     if (!existingPlan) {
@@ -272,12 +177,10 @@ exports.updateChapterPlan = async (req, res) => {
       });
     }
 
-    // Bước 4: Gọi hàm xử lý tương tác xuống tầng Repository của MongoDB để lưu trữ
     const modifiedCount = await saveUpdatedChapterPlan(chapterId, planData);
 
-    // Bước 5: Nhận phản hồi và trả về đối tượng JSON thông báo hoàn tất cho Client
     return res.status(200).json({
-      success: true, // Output của 029_F1
+      success: true,
       message: "Cập nhật kế hoạch chương thành công!",
       modifiedCount: modifiedCount,
     });
@@ -291,7 +194,7 @@ exports.updateChapterPlan = async (req, res) => {
 };
 
 // =========================================================================
-// HÀM REPOSITORY XÓA: removeChapterPlanMongo() (Đặc tả 031_F2)
+// HÀM REPOSITORY XÓA: removeChapterPlanMongo()
 // =========================================================================
 const removeChapterPlanMongo = async (planId) => {
   const mongoDb = getMongoDb();
@@ -299,27 +202,21 @@ const removeChapterPlanMongo = async (planId) => {
     throw new Error("Mất kết nối cơ sở dữ liệu hệ thống (MongoDB).");
   }
 
-  // Sử dụng Collection chapter_plans đúng như đặc tả
   const collection = mongoDb.collection("chapter_plans");
 
-  // Kiểm tra tính hợp lệ của planId trước khi khởi tạo ObjectId
   if (!ObjectId.isValid(planId)) {
     return 0;
   }
 
-  // Thực thi câu lệnh xóa vĩnh viễn tài liệu dựa theo _id
   const deleteResult = await collection.deleteOne({ _id: new ObjectId(planId) });
-
-  // Trả về số lượng bản ghi đã được xóa thành công (deletedCount)
   return deleteResult.deletedCount;
 };
 
 // =========================================================================
-// HÀM CONTROLLER / BUSINESS: deleteChapterPlan() (Đặc tả 031_F1)
+// HÀM CONTROLLER XÓA: deleteChapterPlan()
 // =========================================================================
 exports.deleteChapterPlan = async (req, res) => {
   try {
-    // Bước 1: Tiếp nhận tham số planId từ request parameters (req.params)
     const { planId } = req.params;
 
     if (!planId) {
@@ -345,8 +242,6 @@ exports.deleteChapterPlan = async (req, res) => {
     }
 
     const collection = mongoDb.collection("chapter_plans");
-
-    // Bước 2: Kiểm tra nhanh xem tài liệu kế hoạch có tồn tại hay không
     const existingPlan = await collection.findOne({ _id: new ObjectId(planId) });
 
     if (!existingPlan) {
@@ -356,12 +251,10 @@ exports.deleteChapterPlan = async (req, res) => {
       });
     }
 
-    // Bước 3: Gọi hàm tương tác xuống tầng Repository của MongoDB để xóa bản ghi
     const deletedCount = await removeChapterPlanMongo(planId);
 
-    // Bước 4: Nhận phản hồi xóa thành công và trả về đối tượng JSON cho Client
     return res.status(200).json({
-      success: true, // Output của 031_F1
+      success: true,
       message: "Xóa kế hoạch chương thành công!",
       deletedCount: deletedCount,
     });
@@ -370,6 +263,340 @@ exports.deleteChapterPlan = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi xóa kế hoạch chương.",
+    });
+  }
+};
+
+// =========================================================================
+// HÀM CONTROLLER GỌI N8N GỢI Ý KẾ HOẠCH CHƯƠNG KẾ TIẾP + TẠO CHƯƠNG RỖNG
+// =========================================================================
+exports.suggestChapterPlan = async (req, res) => {
+  try {
+    const { storyId, chapterNumber } = req.body;
+
+    if (!storyId || !chapterNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng cung cấp đầy đủ storyId và chapterNumber để gợi ý kế hoạch.",
+      });
+    }
+
+    const cleanStoryId = Number(storyId);
+    const cleanChapterNumber = Number(chapterNumber);
+
+    if (!Number.isInteger(cleanStoryId) || cleanStoryId <= 0 || !Number.isInteger(cleanChapterNumber) || cleanChapterNumber <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "storyId và chapterNumber phải là số nguyên dương.",
+      });
+    }
+
+    const [storyCheck] = await db.query("SELECT id FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
+
+    if (!storyCheck || storyCheck.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Bộ truyện không tồn tại trên hệ thống.",
+      });
+    }
+
+    const n8nWebhook = "https://n8n.baostory.fun/webhook/suggest_1chapterplan_next";
+    let n8nResponse;
+
+    try {
+      n8nResponse = await axios.post(
+        n8nWebhook,
+        {
+          storyId: cleanStoryId,
+          chapterNumber: cleanChapterNumber,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          timeout: 120000,
+          validateStatus: () => true,
+        },
+      );
+    } catch (n8nError) {
+      console.error("❌ Không kết nối được N8N:", n8nError.message);
+      return res.status(502).json({
+        success: false,
+        message: "Backend không thể kết nối tới N8N.",
+        error: n8nError.message,
+      });
+    }
+
+    if (n8nResponse.status < 200 || n8nResponse.status >= 300) {
+      return res.status(502).json({
+        success: false,
+        message: `N8N trả về HTTP ${n8nResponse.status}.`,
+        n8nStatus: n8nResponse.status,
+        n8nResponse: n8nResponse.data,
+      });
+    }
+
+    let rawData = n8nResponse.data;
+    if (rawData && typeof rawData === "object" && !Array.isArray(rawData) && rawData.data !== undefined) {
+      rawData = rawData.data;
+    }
+    if (Array.isArray(rawData)) {
+      rawData = rawData[0];
+    }
+
+    let chapterPlan = rawData?.chapterPlan;
+    if (!chapterPlan && rawData?.chapterNumber) {
+      chapterPlan = rawData;
+    }
+
+    if (!chapterPlan || typeof chapterPlan !== "object") {
+      return res.status(502).json({
+        success: false,
+        message: "N8N không trả về chapterPlan hợp lệ.",
+        n8nResponse: n8nResponse.data,
+      });
+    }
+
+    const generatedChapterNumber = Number(chapterPlan.chapterNumber) || cleanChapterNumber;
+    const generatedTitle = chapterPlan.title || `Chương ${generatedChapterNumber}`;
+    const generatedPurpose = chapterPlan.purpose || "";
+    const generatedConflict = chapterPlan.conflict || "";
+    const generatedEndingHook = chapterPlan.endingHook || "";
+
+    const mongoDb = getMongoDb();
+    if (!mongoDb) {
+      return res.status(500).json({
+        success: false,
+        message: "Mất kết nối MongoDB.",
+      });
+    }
+
+    const chapterPlansCollection = mongoDb.collection("chapter_plans");
+    const existingPlan = await chapterPlansCollection.findOne({
+      storyId: cleanStoryId,
+      chapterNumber: generatedChapterNumber,
+    });
+
+    let savedPlan;
+
+    if (existingPlan) {
+      await chapterPlansCollection.updateOne(
+        { _id: existingPlan._id },
+        {
+          $set: {
+            title: generatedTitle,
+            purpose: generatedPurpose,
+            conflict: generatedConflict,
+            endingHook: generatedEndingHook,
+            updatedAt: new Date(),
+          },
+        },
+      );
+
+      savedPlan = {
+        ...existingPlan,
+        title: generatedTitle,
+        purpose: generatedPurpose,
+        conflict: generatedConflict,
+        endingHook: generatedEndingHook,
+      };
+    } else {
+      const newPlanDoc = {
+        storyId: cleanStoryId,
+        chapterNumber: generatedChapterNumber,
+        title: generatedTitle,
+        purpose: generatedPurpose,
+        conflict: generatedConflict,
+        endingHook: generatedEndingHook,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const insertResult = await chapterPlansCollection.insertOne(newPlanDoc);
+      savedPlan = {
+        _id: insertResult.insertedId,
+        ...newPlanDoc,
+      };
+    }
+
+    // Tự động tạo chương rỗng (MySQL + MongoDB)
+    let chapterId = null;
+    let chapterCreated = false;
+
+    try {
+      const [existingChapter] = await db.query(`SELECT id FROM chapters_content WHERE story_id = ? AND chapter_number = ? LIMIT 1`, [cleanStoryId, generatedChapterNumber]);
+
+      if (existingChapter && existingChapter.length > 0) {
+        chapterId = existingChapter[0].id;
+      } else {
+        const [chapterInsert] = await db.query(`INSERT INTO chapters_content (story_id, chapter_number, title, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())`, [cleanStoryId, generatedChapterNumber, generatedTitle]);
+
+        chapterId = chapterInsert.insertId;
+
+        const contentCollection = mongoDb.collection("chapters_content");
+        await contentCollection.insertOne({
+          storyId: cleanStoryId,
+          chapterNumber: generatedChapterNumber,
+          title: generatedTitle,
+          content: "",
+          status: "DRAFT",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        chapterCreated = true;
+      }
+    } catch (chapterError) {
+      console.error("❌ Lỗi tạo Chapter:", chapterError);
+      return res.status(500).json({
+        success: false,
+        message: "Đã tạo kế hoạch chương nhưng không thể tạo chương rỗng.",
+        error: chapterError.message,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "AI đã tạo kế hoạch chương và khởi tạo chương thành công.",
+      data: {
+        planId: savedPlan._id ? savedPlan._id.toString() : null,
+        chapterId,
+        storyId: cleanStoryId,
+        chapterNumber: generatedChapterNumber,
+        title: generatedTitle,
+        purpose: generatedPurpose,
+        conflict: generatedConflict,
+        endingHook: generatedEndingHook,
+        content: "",
+        chapterCreated,
+      },
+    });
+  } catch (error) {
+    console.error("❌ LỖI suggestChapterPlan:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi hệ thống khi tạo kế hoạch chương.",
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================================
+// HÀM CONTROLLER GỢI Ý KẾ HOẠCH CHƯƠNG HIỆN TẠI (CHỈ GỢI Ý, KHÔNG TẠO CHƯƠNG)
+// =========================================================================
+exports.suggestCurrentChapterPlan = async (req, res) => {
+  try {
+    const { storyId, chapterNumber } = req.body;
+
+    if (!storyId || !chapterNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng cung cấp đầy đủ storyId và chapterNumber.",
+      });
+    }
+
+    const cleanStoryId = Number(storyId);
+    const cleanChapterNumber = Number(chapterNumber);
+
+    if (!Number.isInteger(cleanStoryId) || cleanStoryId <= 0 || !Number.isInteger(cleanChapterNumber) || cleanChapterNumber <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "storyId và chapterNumber phải là số nguyên dương.",
+      });
+    }
+
+    const [storyCheck] = await db.query(`SELECT id FROM stories WHERE id = ? AND deleted_at IS NULL`, [cleanStoryId]);
+
+    if (!storyCheck || storyCheck.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Bộ truyện không tồn tại trên hệ thống.",
+      });
+    }
+
+    const n8nWebhook = "https://n8n.baostory.fun/webhook/suggest_1chapterplan_now";
+    let n8nResponse;
+
+    try {
+      n8nResponse = await axios.post(
+        n8nWebhook,
+        {
+          storyId: cleanStoryId,
+          chapterNumber: cleanChapterNumber,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          timeout: 120000,
+          validateStatus: () => true,
+        },
+      );
+    } catch (n8nError) {
+      console.error("❌ Không kết nối được N8N:", n8nError.message);
+      return res.status(502).json({
+        success: false,
+        message: "Backend không thể kết nối tới N8N.",
+        error: n8nError.message,
+      });
+    }
+
+    if (n8nResponse.status < 200 || n8nResponse.status >= 300) {
+      return res.status(502).json({
+        success: false,
+        message: `N8N trả về HTTP ${n8nResponse.status}.`,
+        n8nStatus: n8nResponse.status,
+        n8nResponse: n8nResponse.data,
+      });
+    }
+
+    let rawData = n8nResponse.data;
+    if (rawData && typeof rawData === "object" && !Array.isArray(rawData) && rawData.data !== undefined) {
+      rawData = rawData.data;
+    }
+    if (Array.isArray(rawData)) {
+      rawData = rawData[0];
+    }
+
+    let chapterPlan = rawData?.chapterPlan;
+    if (!chapterPlan && rawData && typeof rawData === "object" && rawData.chapterNumber) {
+      chapterPlan = rawData;
+    }
+
+    if (!chapterPlan || typeof chapterPlan !== "object") {
+      return res.status(502).json({
+        success: false,
+        message: "N8N không trả về chapterPlan hợp lệ.",
+        n8nResponse: n8nResponse.data,
+      });
+    }
+
+    const generatedChapterNumber = Number(chapterPlan.chapterNumber) || cleanChapterNumber;
+    const generatedTitle = chapterPlan.title || `Chương ${generatedChapterNumber}`;
+    const generatedPurpose = chapterPlan.purpose || "";
+    const generatedConflict = chapterPlan.conflict || "";
+    const generatedEndingHook = chapterPlan.endingHook || "";
+
+    return res.status(200).json({
+      success: true,
+      message: "AI đã gợi ý kế hoạch chương hiện tại thành công.",
+      data: {
+        storyId: cleanStoryId,
+        chapterNumber: generatedChapterNumber,
+        title: generatedTitle,
+        purpose: generatedPurpose,
+        conflict: generatedConflict,
+        endingHook: generatedEndingHook,
+      },
+    });
+  } catch (error) {
+    console.error("❌ LỖI suggestCurrentChapterPlan:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi hệ thống khi gợi ý kế hoạch chương hiện tại.",
+      error: error.message,
     });
   }
 };

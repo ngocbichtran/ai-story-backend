@@ -8,6 +8,8 @@ router.post("/", authMiddleware, characterController.createCharacter);
 
 // Lấy chi tiết một nhân vật theo characterId
 router.get("/:characterId", authMiddleware, characterController.getCharacterDetail);
+// GỌI N8N BIẾN ĐỔI NHÂN VẬT
+router.post("/:characterId/transform", authMiddleware, characterController.triggerTransformation);
 
 // Lấy danh sách nhân vật theo storyId (Hỗ trợ lọc theo query ?role=...)
 router.get("/:storyId/list", authMiddleware, characterController.getCharactersByStory);

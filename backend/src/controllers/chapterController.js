@@ -2,9 +2,9 @@
 const db = require("../config/db");
 const { getMongoDb } = require("../config/mongo"); // Thư viện kết nối MongoDB Atlas đám mây
 const n8nService = require("../services/n8nService");
-
+const axios = require("axios");
 // =========================================================================
-// 1. KHỞI TẠO CHƯƠNG MỚI
+// 1. KHỞI TẠO CHƯƠNG MỚI (TỰ ĐỘNG TẠO KÈM CHAPTER_PLANS)
 // =========================================================================
 exports.createChapter = async (req, res) => {
   try {
@@ -47,8 +47,11 @@ exports.createChapter = async (req, res) => {
         message: "Mất kết nối cơ sở dữ liệu hệ thống (MongoDB).",
       });
     }
-    const collection = mongoDb.collection("chapters_content");
 
+    const collection = mongoDb.collection("chapters_content");
+    const planCollection = mongoDb.collection("chapter_plans"); // Collection kế hoạch chương
+
+    // Kiểm tra trùng chương
     const duplicateChapter = await collection.findOne({
       $or: [
         { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
@@ -63,6 +66,7 @@ exports.createChapter = async (req, res) => {
       });
     }
 
+    // 1. Tạo bản ghi Chương mới
     const newChapter = {
       storyId: cleanStoryId,
       chapterNumber: cleanChapterNumber,
@@ -75,13 +79,30 @@ exports.createChapter = async (req, res) => {
     };
 
     const result = await collection.insertOne(newChapter);
+    const insertedChapterId = result.insertedId.toString();
+
+    // 2. TỰ ĐỘNG KHỞI TẠO BẢN GHI TRONG `chapter_plans` MẶC ĐỊNH
+    await planCollection.updateOne(
+      { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
+      {
+        $setOnInsert: {
+          storyId: cleanStoryId,
+          chapterNumber: cleanChapterNumber,
+          versionName: title.trim(), // Lấy luôn tiêu đề làm versionName mặc định
+          summary: "", // Giá trị mặc định trống hoặc null
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true },
+    );
 
     return res.status(201).json({
       success: true,
-      message: "Create chapter success",
-      chapterId: result.insertedId.toString(),
+      message: "Create chapter and plan success",
+      chapterId: insertedChapterId,
       data: {
-        id: result.insertedId.toString(),
+        id: insertedChapterId,
         storyId: cleanStoryId,
         chapterNumber: cleanChapterNumber,
         title: title.trim(),
@@ -680,5 +701,61 @@ exports.spellCheck = async (req, res) => {
       success: false,
       message: "Lỗi AI",
     });
+  }
+};
+
+// =====================================================
+// AI GỢI Ý NỘI DUNG CHƯƠNG (Nối n8n)
+// =====================================================
+exports.aiSuggestPlot = async (req, res) => {
+  try {
+    const { chapterNumber } = req.params;
+    const { storyId, prompt, currentContent } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Phiên đăng nhập hết hạn." });
+    }
+
+    if (!storyId || !chapterNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu thông tin storyId hoặc chapterNumber.",
+      });
+    }
+
+    const N8N_PLOT_URL = "https://n8n.baostory.fun/webhook/suggest_chaptercontent";
+
+    const payload = {
+      storyId: Number(storyId),
+      chapterNumber: Number(chapterNumber),
+      prompt: prompt || "",
+      currentContent: currentContent || "",
+      userId: Number(userId),
+    };
+
+    console.log("🔥 PAYLOAD GỬI N8N:", JSON.stringify(payload, null, 2));
+
+    console.log("🔥 N8N URL:", N8N_PLOT_URL);
+
+    const response = await axios.post(N8N_PLOT_URL, payload, {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      timeout: 120000,
+      validateStatus: () => true,
+    });
+
+    console.log("🔥 N8N RESPONSE:", response.status, response.data);
+    const aiContent = response.data.content || response.data.suggestion || response.data.data || response.data || "";
+
+    return res.status(200).json({
+      success: true,
+      message: "AI đã tạo gợi ý thành công.",
+      data: { content: aiContent },
+    });
+  } catch (error) {
+    console.error("❌ Lỗi AI Plot Suggestion:", error);
+    return res.status(500).json({ success: false, message: "Lỗi hệ thống khi gọi AI." });
   }
 };

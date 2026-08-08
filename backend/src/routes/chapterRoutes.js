@@ -2,14 +2,15 @@ const express = require("express");
 const router = express.Router();
 const chapterController = require("../controllers/chapterController");
 const authMiddleware = require("../middleware/authMiddleware"); // Middleware kiểm tra Token tác giả
-
+const chapterPlanController = require("../controllers/chapterPlanController");
 // =========================================================================
 // 1. NHÓM ROUTE CỤ THỂ / AI (Ưu tiên đưa lên đầu)
 // =========================================================================
 
 // AI sửa lỗi chính tả chương qua n8n
 router.post("/ai/:chapterId/spell-check", authMiddleware, chapterController.spellCheck);
-
+// AI gợi ý nội dung chương
+router.post("/ai/:chapterNumber/plot-suggestion", authMiddleware, chapterController.aiSuggestPlot);
 // Lấy chi tiết nội dung hiển thị của một chương (MongoDB Atlas)
 router.get("/display-chapter/:storyId/:chapterNumber", chapterController.getDisplayChapter);
 

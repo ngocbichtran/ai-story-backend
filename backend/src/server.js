@@ -10,7 +10,7 @@ const storyOutlineRoutes = require("./routes/storyOutlineRoutes");
 const worldRoutes = require("./routes/worldRoutes");
 const characterRoutes = require("./routes/characterRoutes");
 const chapterPlanRoutes = require("./routes/chapterPlanRoutes");
-const sceneRoutes = require("./routes/sceneRoutes");
+const derivativeStoryRoutes = require("./routes/derivativeStoryRoutes");
 // Import hàm kết nối MongoDB Atlas
 const { connectMongoDB } = require("./config/mongo");
 const app = express();
@@ -37,8 +37,7 @@ app.use("/api/storyOutline", storyOutlineRoutes); // Cốt truyện
 app.use("/api/world", worldRoutes); // Thế giới
 app.use("/api/characters", characterRoutes); // Nhân vật
 app.use("/api/chapterPlan", chapterPlanRoutes); // Kế hoạch chương
-app.use("/api/scenes", sceneRoutes); // Kế hoạch chương
-
+app.use("/api/derivativeStory", derivativeStoryRoutes); // Kế hoạch chương
 // 5. KHỞI CHẠY SERVER CHUẨN
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, async () => {

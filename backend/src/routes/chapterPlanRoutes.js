@@ -3,9 +3,9 @@ const router = express.Router();
 const chapterPlanController = require("../controllers/chapterPlanController");
 const authMiddleware = require("../middleware/authMiddleware"); // Middleware xác thực token
 
-// 1. Khởi tạo kế hoạch chương mới (Đặc tả 028_F1)
-router.post("/", authMiddleware, chapterPlanController.createChapterPlan);
-
+router.post("/suggest-current", authMiddleware, chapterPlanController.suggestCurrentChapterPlan);
+// Route gọi n8n để lấy gợi ý kế hoạch chương
+router.post("/suggest", authMiddleware, chapterPlanController.suggestChapterPlan);
 // 2. Lấy danh sách toàn bộ kế hoạch chương theo storyId (URL chuẩn: /api/chapterPlan/stories/:storyId)
 router.get("/stories/:storyId", authMiddleware, chapterPlanController.getChapterPlansByStory);
 

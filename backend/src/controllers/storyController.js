@@ -3,14 +3,22 @@ const db = require("../config/db"); // Pool từ db.js (bản mysql2/promise)
 const { getMongoDb } = require("../config/mongo");
 const axios = require("axios");
 // Lưu thông tin gốc truyện (MySQL)
-const saveStory = async (userId, title, description, coverImage) => {
+const saveStory = async (userId, title, description, coverImage, originalStoryId) => {
   const [result] = await db.query(
     `
-    INSERT INTO stories (user_id, title, description, cover_image, status) 
-    VALUES (?, ?, ?, ?, 'DRAFT')
-    `,
-    [userId, title, description || null, coverImage || null],
+        INSERT INTO stories (
+            user_id,
+            title,
+            description,
+            cover_image,
+            original_story_id,
+            status
+        )
+        VALUES (?, ?, ?, ?, ?, 'DRAFT')
+        `,
+    [userId, title, description || null, coverImage || null, originalStoryId || null],
   );
+
   return result.insertId;
 };
 
@@ -53,7 +61,7 @@ const initStoryOutline = async (storyId) => {
 // =========================================================================
 exports.createStory = async (req, res) => {
   try {
-    const { title, description, genreIds, coverImage } = req.body;
+    const { title, description, genreIds, coverImage, originalStoryId } = req.body;
     const userId = req.user?.id;
 
     if (!userId) {
@@ -71,7 +79,7 @@ exports.createStory = async (req, res) => {
     }
 
     // Luồng thực thi ngầm
-    const storyId = await saveStory(userId, title.trim(), description, coverImage);
+    const storyId = await saveStory(userId, title.trim(), description, coverImage, originalStoryId);
 
     if (genreIds && Array.isArray(genreIds) && genreIds.length > 0) {
       await saveStoryGenres(storyId, genreIds);
@@ -99,18 +107,29 @@ exports.createStory = async (req, res) => {
  * GET /api/stories/:id
  */
 const findStoryById = async (storyId) => {
-  // Thực hiện GROUP_CONCAT để gom danh sách tên thể loại thành 1 chuỗi ngăn cách bởi dấu phẩy
   const [rows] = await db.query(
     `
-    SELECT 
-      s.id, s.user_id, s.title, s.description, s.cover_image, s.status, s.created_at, s.updated_at,
-      GROUP_CONCAT(g.name SEPARATOR ', ') AS genres
-    FROM stories s
-    LEFT JOIN story_genres sg ON s.id = sg.story_id
-    LEFT JOIN genres g ON sg.genre_id = g.id AND g.deleted_at IS NULL
-    WHERE s.id = ? AND s.deleted_at IS NULL
-    GROUP BY s.id
-    `,
+        SELECT 
+            s.id,
+            s.user_id,
+            s.title,
+            s.description,
+            s.cover_image,
+            s.status,
+            s.original_story_id,
+            s.created_at,
+            s.updated_at,
+            GROUP_CONCAT(g.name SEPARATOR ', ') AS genres
+        FROM stories s
+        LEFT JOIN story_genres sg 
+            ON s.id = sg.story_id
+        LEFT JOIN genres g 
+            ON sg.genre_id = g.id 
+            AND g.deleted_at IS NULL
+        WHERE s.id = ? 
+            AND s.deleted_at IS NULL
+        GROUP BY s.id
+        `,
     [storyId],
   );
 
@@ -161,7 +180,9 @@ exports.getStoryDetails = async (req, res) => {
 
     // 1. Kiểm tra truyện tồn tại & Lấy thông tin gốc (MySQL)
     const storyData = await findStoryById(storyId);
+    const [testRows] = await db.query(`SELECT id, original_story_id FROM stories WHERE id = ?`, [storyId]);
 
+    console.log("🔥 TEST ORIGINAL STORY ID:", testRows);
     // Nếu không tồn tại hoặc đã bị xóa mềm (deleted_at IS NOT NULL đã được check trong repo)
     if (!storyData) {
       return res.status(404).json({

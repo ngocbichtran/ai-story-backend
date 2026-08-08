@@ -2,9 +2,13 @@ const db = require("../config/db"); // Kết nối MySQL để kiểm tra story
 const { getMongoDb } = require("../config/mongo"); // Kết nối MongoDB Atlas
 const { ObjectId } = require("mongodb");
 
-// HÀM REPOSITORY Cho chức năng chỉnh sửa: saveUpdatedCharacter() (Đặc tả 019_F2)
+// =========================================================================
+// HÀM REPOSITORY: saveUpdatedCharacter()
+// Đặc tả 019_F2
+// =========================================================================
 const saveUpdatedCharacter = async (characterId, updateData) => {
   const mongoDb = getMongoDb();
+
   if (!mongoDb) {
     throw new Error("Mất kết nối cơ sở dữ liệu hệ thống (MongoDB).");
   }
@@ -12,48 +16,107 @@ const saveUpdatedCharacter = async (characterId, updateData) => {
   const collection = mongoDb.collection("characters");
 
   let queryConditions = [{ id: characterId }];
+
   if (!isNaN(Number(characterId))) {
     queryConditions.push({ id: Number(characterId) });
   }
+
   if (ObjectId.isValid(characterId)) {
     try {
       queryConditions.push({ _id: new ObjectId(characterId) });
     } catch (e) {}
   }
 
-  // Chuẩn bị payload cập nhật động toàn bộ các trường thuộc tính theo schema mới
+  // Chuẩn bị payload cập nhật động
   const updatePayload = {
     updatedAt: new Date(),
   };
 
-  if (updateData.name !== undefined) updatePayload.name = updateData.name.trim();
-  if (updateData.gender !== undefined) updatePayload.gender = updateData.gender;
-  if (updateData.age !== undefined) updatePayload.age = updateData.age;
-  if (updateData.status !== undefined) updatePayload.status = updateData.status;
-  if (updateData.occupation !== undefined) updatePayload.occupation = updateData.occupation;
-  if (updateData.role !== undefined) updatePayload.role = updateData.role.trim();
-  if (updateData.appearance !== undefined) updatePayload.appearance = updateData.appearance;
-  if (updateData.personality !== undefined) updatePayload.personality = updateData.personality;
-  if (updateData.background !== undefined) updatePayload.background = updateData.background;
-  if (updateData.goal !== undefined) updatePayload.goal = updateData.goal;
-  if (updateData.ability !== undefined) updatePayload.ability = updateData.ability;
-  if (updateData.development !== undefined) updatePayload.development = updateData.development;
-  if (updateData.currentLocation !== undefined) updatePayload.currentLocation = updateData.currentLocation;
-  if (updateData.relationship !== undefined) updatePayload.relationship = updateData.relationship;
-  if (updateData.avatar !== undefined) updatePayload.avatar = updateData.avatar;
-  if (updateData.tags !== undefined) updatePayload.tags = updateData.tags;
+  if (updateData.name !== undefined) {
+    updatePayload.name = updateData.name.trim();
+  }
 
-  // Thực thi câu lệnh cập nhật động trong MongoDB sử dụng toán tử $set
+  // LOÀI
+  if (updateData.species !== undefined) {
+    updatePayload.species = updateData.species;
+  }
+
+  if (updateData.gender !== undefined) {
+    updatePayload.gender = updateData.gender;
+  }
+
+  if (updateData.age !== undefined) {
+    updatePayload.age = updateData.age;
+  }
+
+  if (updateData.status !== undefined) {
+    updatePayload.status = updateData.status;
+  }
+
+  if (updateData.occupation !== undefined) {
+    updatePayload.occupation = updateData.occupation;
+  }
+
+  if (updateData.role !== undefined) {
+    updatePayload.role = updateData.role.trim();
+  }
+
+  if (updateData.appearance !== undefined) {
+    updatePayload.appearance = updateData.appearance;
+  }
+
+  if (updateData.personality !== undefined) {
+    updatePayload.personality = updateData.personality;
+  }
+
+  if (updateData.background !== undefined) {
+    updatePayload.background = updateData.background;
+  }
+
+  if (updateData.goal !== undefined) {
+    updatePayload.goal = updateData.goal;
+  }
+
+  if (updateData.ability !== undefined) {
+    updatePayload.ability = updateData.ability;
+  }
+
+  if (updateData.development !== undefined) {
+    updatePayload.development = updateData.development;
+  }
+
+  if (updateData.currentLocation !== undefined) {
+    updatePayload.currentLocation = updateData.currentLocation;
+  }
+
+  if (updateData.relationship !== undefined) {
+    updatePayload.relationship = updateData.relationship;
+  }
+
+  if (updateData.avatar !== undefined) {
+    updatePayload.avatar = updateData.avatar;
+  }
+
+  if (updateData.tags !== undefined) {
+    updatePayload.tags = updateData.tags;
+  }
+
+  // Không tự động thay đổi isDeleted khi cập nhật nhân vật.
+  // Tránh trường hợp nhân vật đã xóa mềm bị khôi phục ngoài ý muốn.
+
+  // Thực thi cập nhật MongoDB
   const result = await collection.updateOne({ $or: queryConditions }, { $set: updatePayload });
 
   return result.modifiedCount;
 };
 
 // =========================================================================
-// HÀM REPOSITORY NỘI BỘ: removeCharacterMongo() (Đặc tả 020_F2)
+// HÀM REPOSITORY NỘI BỘ: removeCharacterMongo()
+// Đặc tả 020_F2
 // =========================================================================
 const removeCharacterMongo = async (characterId) => {
   const mongoDb = getMongoDb();
+
   if (!mongoDb) {
     throw new Error("Mất kết nối cơ sở dữ liệu hệ thống (MongoDB).");
   }
@@ -61,12 +124,16 @@ const removeCharacterMongo = async (characterId) => {
   const collection = mongoDb.collection("characters");
 
   let queryConditions = [{ id: characterId }];
+
   if (!isNaN(Number(characterId))) {
     queryConditions.push({ id: Number(characterId) });
   }
+
   if (ObjectId.isValid(characterId)) {
     try {
-      queryConditions.push({ _id: new ObjectId(characterId) });
+      queryConditions.push({
+        _id: new ObjectId(characterId),
+      });
     } catch (e) {}
   }
 
@@ -86,14 +153,16 @@ const removeCharacterMongo = async (characterId) => {
 };
 
 // =========================================================================
-// KHỞI TẠO NHÂN VẬT MỚI (Đặc tả 016_F1 & 016_F2)
+// KHỞI TẠO NHÂN VẬT MỚI
+// Đặc tả 016_F1 & 016_F2
 // =========================================================================
 exports.createCharacter = async (req, res) => {
   try {
-    // Bước 1: Tiếp nhận storyId và thông tin nhân vật từ req.body
+    // Bước 1: Tiếp nhận storyId và thông tin nhân vật
     const { storyId, ...characterData } = req.body;
 
     const userId = req.user?.id;
+
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -101,8 +170,9 @@ exports.createCharacter = async (req, res) => {
       });
     }
 
-    // Bước 2: Kiểm tra tính hợp lệ của các trường bắt buộc
+    // Bước 2: Kiểm tra các trường bắt buộc
     const { name, role } = characterData;
+
     if (!storyId || !name || !name.trim() || !role || !role.trim()) {
       return res.status(400).json({
         success: false,
@@ -112,7 +182,7 @@ exports.createCharacter = async (req, res) => {
 
     const cleanStoryId = Number(storyId);
 
-    // Bước 3: Truy vấn kiểm tra bộ truyện gốc trong MySQL
+    // Bước 3: Kiểm tra story trong MySQL
     const [storyCheck] = await db.query("SELECT COUNT(*) as count FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
 
     if (storyCheck[0].count === 0) {
@@ -123,6 +193,7 @@ exports.createCharacter = async (req, res) => {
     }
 
     const mongoDb = getMongoDb();
+
     if (!mongoDb) {
       return res.status(500).json({
         success: false,
@@ -132,19 +203,26 @@ exports.createCharacter = async (req, res) => {
 
     const collection = mongoDb.collection("characters");
 
-    // Bước 4: Khởi tạo document theo đúng Schema chuẩn
+    // Bước 4: Khởi tạo document nhân vật
     const newCharacterDoc = {
       storyId: cleanStoryId,
 
       name: name.trim(),
+
+      // LOÀI
+      species: characterData.species || "",
+
       gender: characterData.gender || "",
       age: characterData.age ?? 0,
 
       status: characterData.status || "alive",
+
+      // Xóa mềm
       isDeleted: false,
 
       occupation: characterData.occupation || "",
       role: role.trim(),
+
       appearance: characterData.appearance || "",
       personality: characterData.personality || "",
       background: characterData.background || "",
@@ -168,7 +246,7 @@ exports.createCharacter = async (req, res) => {
 
     const insertResult = await collection.insertOne(newCharacterDoc);
 
-    // Bước 5: Trả về phản hồi JSON thông báo thành công kèm mã định danh mới
+    // Bước 5: Trả về kết quả
     return res.status(201).json({
       success: true,
       message: "Khởi tạo nhân vật mới thành công",
@@ -176,10 +254,13 @@ exports.createCharacter = async (req, res) => {
         id: insertResult.insertedId.toString(),
         storyId: cleanStoryId,
         name: name.trim(),
+        species: characterData.species || "",
+        isDeleted: false,
       },
     });
   } catch (error) {
     console.error("Lỗi tại hàm createCharacter:", error);
+
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi khởi tạo nhân vật.",
@@ -188,7 +269,8 @@ exports.createCharacter = async (req, res) => {
 };
 
 // =========================================================================
-// LẤY CHI TIẾT MỘT NHÂN VẬT THEO ID (Đặc tả 017_F1 & 017_F2)
+// LẤY CHI TIẾT MỘT NHÂN VẬT THEO ID
+// Đặc tả 017_F1 & 017_F2
 // =========================================================================
 exports.getCharacterDetail = async (req, res) => {
   try {
@@ -202,6 +284,7 @@ exports.getCharacterDetail = async (req, res) => {
     }
 
     const mongoDb = getMongoDb();
+
     if (!mongoDb) {
       return res.status(500).json({
         success: false,
@@ -214,16 +297,22 @@ exports.getCharacterDetail = async (req, res) => {
     let queryConditions = [{ id: characterId }];
 
     if (!isNaN(Number(characterId))) {
-      queryConditions.push({ id: Number(characterId) });
+      queryConditions.push({
+        id: Number(characterId),
+      });
     }
 
     if (ObjectId.isValid(characterId)) {
       try {
-        queryConditions.push({ _id: new ObjectId(characterId) });
+        queryConditions.push({
+          _id: new ObjectId(characterId),
+        });
       } catch (err) {}
     }
 
-    const char = await collection.findOne({ $or: queryConditions });
+    const char = await collection.findOne({
+      $or: queryConditions,
+    });
 
     if (!char) {
       return res.status(404).json({
@@ -239,10 +328,16 @@ exports.getCharacterDetail = async (req, res) => {
         storyId: char.storyId,
 
         name: char.name || "",
+
+        // LOÀI
+        species: char.species || "",
+
         gender: char.gender || "",
         age: char.age ?? 0,
 
         status: char.status || "alive",
+
+        // Xóa mềm
         isDeleted: char.isDeleted ?? false,
 
         occupation: char.occupation || "",
@@ -271,6 +366,7 @@ exports.getCharacterDetail = async (req, res) => {
     });
   } catch (error) {
     console.error("Lỗi chi tiết tại hàm getCharacterDetail:", error);
+
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lấy chi tiết nhân vật.",
@@ -279,7 +375,8 @@ exports.getCharacterDetail = async (req, res) => {
 };
 
 // =========================================================================
-// LẤY DANH SÁCH NHÂN VẬT THEO STORY ID VÀ ROLE (Đặc tả 018_F1 & 018_F2)
+// LẤY DANH SÁCH NHÂN VẬT THEO STORY ID VÀ ROLE
+// Đặc tả 018_F1 & 018_F2
 // =========================================================================
 exports.getCharactersByStory = async (req, res) => {
   try {
@@ -295,6 +392,7 @@ exports.getCharactersByStory = async (req, res) => {
 
     const cleanStoryId = Number(storyId);
 
+    // Kiểm tra story
     const [storyCheck] = await db.query("SELECT COUNT(*) as count FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
 
     if (storyCheck[0].count === 0) {
@@ -305,6 +403,7 @@ exports.getCharactersByStory = async (req, res) => {
     }
 
     const mongoDb = getMongoDb();
+
     if (!mongoDb) {
       return res.status(500).json({
         success: false,
@@ -314,10 +413,16 @@ exports.getCharactersByStory = async (req, res) => {
 
     const collection = mongoDb.collection("characters");
 
-    let query = { storyId: cleanStoryId, isDeleted: { $ne: true } };
+    // Chỉ lấy nhân vật chưa bị xóa mềm
+    let query = {
+      storyId: cleanStoryId,
+      isDeleted: { $ne: true },
+    };
 
     if (role && role !== "ALL" && role !== "Tất cả" && role.trim() !== "") {
-      query.role = { $regex: new RegExp(`^${role.trim()}$`, "i") };
+      query.role = {
+        $regex: new RegExp(`^${role.trim()}$`, "i"),
+      };
     }
 
     const charactersListRaw = await collection.find(query).sort({ createdAt: -1 }).toArray();
@@ -327,10 +432,16 @@ exports.getCharactersByStory = async (req, res) => {
       storyId: char.storyId,
 
       name: char.name || "",
+
+      // LOÀI
+      species: char.species || "",
+
       gender: char.gender || "",
       age: char.age ?? 0,
 
       status: char.status || "alive",
+
+      // Xóa mềm
       isDeleted: char.isDeleted ?? false,
 
       occupation: char.occupation || "",
@@ -364,6 +475,7 @@ exports.getCharactersByStory = async (req, res) => {
     });
   } catch (error) {
     console.error("Lỗi tại hàm getCharactersByStory:", error);
+
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lấy danh sách nhân vật.",
@@ -372,7 +484,8 @@ exports.getCharactersByStory = async (req, res) => {
 };
 
 // =========================================================================
-// CẬP NHẬT THÔNG TIN NHÂN VẬT (Đặc tả 019_F1)
+// CẬP NHẬT THÔNG TIN NHÂN VẬT
+// Đặc tả 019_F1
 // =========================================================================
 exports.updateCharacter = async (req, res) => {
   try {
@@ -386,6 +499,7 @@ exports.updateCharacter = async (req, res) => {
       });
     }
 
+    // Kiểm tra tên nếu có gửi lên
     if (updateData.name !== undefined && !updateData.name.trim()) {
       return res.status(400).json({
         success: false,
@@ -393,6 +507,7 @@ exports.updateCharacter = async (req, res) => {
       });
     }
 
+    // Kiểm tra vai trò nếu có gửi lên
     if (updateData.role !== undefined && !updateData.role.trim()) {
       return res.status(400).json({
         success: false,
@@ -416,6 +531,7 @@ exports.updateCharacter = async (req, res) => {
     });
   } catch (error) {
     console.error("Lỗi tại hàm updateCharacter:", error);
+
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi cập nhật thông tin nhân vật.",
@@ -424,7 +540,8 @@ exports.updateCharacter = async (req, res) => {
 };
 
 // =========================================================================
-// HÀM CONTROLLER CHÍNH: deleteCharacter() (Đặc tả 020_F1)
+// HÀM CONTROLLER CHÍNH: deleteCharacter()
+// Đặc tả 020_F1
 // =========================================================================
 exports.deleteCharacter = async (req, res) => {
   try {
@@ -438,6 +555,7 @@ exports.deleteCharacter = async (req, res) => {
     }
 
     const mongoDb = getMongoDb();
+
     if (!mongoDb) {
       return res.status(500).json({
         success: false,
@@ -448,15 +566,22 @@ exports.deleteCharacter = async (req, res) => {
     const collection = mongoDb.collection("characters");
 
     let queryConditions = [{ id: characterId }];
+
     if (!isNaN(Number(characterId))) {
-      queryConditions.push({ id: Number(characterId) });
+      queryConditions.push({
+        id: Number(characterId),
+      });
     }
+
     if (ObjectId.isValid(characterId)) {
       try {
-        queryConditions.push({ _id: new ObjectId(characterId) });
+        queryConditions.push({
+          _id: new ObjectId(characterId),
+        });
       } catch (e) {}
     }
 
+    // Chỉ tìm nhân vật chưa bị xóa
     const existingCharacter = await collection.findOne({
       $or: queryConditions,
       isDeleted: { $ne: true },
@@ -485,9 +610,49 @@ exports.deleteCharacter = async (req, res) => {
     });
   } catch (error) {
     console.error("Lỗi tại hàm deleteCharacter:", error);
+
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi xóa nhân vật.",
+    });
+  }
+};
+
+// =========================================================================
+// TRIGGER BIẾN ĐỔI NHÂN VẬT QUA N8N
+// =========================================================================
+const axios = require("axios");
+
+exports.triggerTransformation = async (req, res) => {
+  const { characterId } = req.params;
+  const { storyId } = req.body;
+
+  try {
+    // Gửi sang n8n và đợi kết quả từ node "Respond to Webhook"
+    const response = await axios.post(
+      "https://n8n.baostory.fun/webhook/reverse-character",
+      {
+        storyId: storyId,
+        characterId: characterId,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    // Trả dữ liệu nhận được từ n8n về Frontend
+    return res.status(200).json({
+      success: true,
+      data: response.data,
+    });
+  } catch (err) {
+    console.error("Lỗi chi tiết từ n8n:", err.response?.data || err.message);
+
+    return res.status(500).json({
+      success: false,
+      message: err.response?.data?.message || err.message,
     });
   }
 };

@@ -3,9 +3,12 @@ const router = express.Router();
 const chapterPlanController = require("../controllers/chapterPlanController");
 const authMiddleware = require("../middleware/authMiddleware"); // Middleware xác thực token
 
+// Route gọi n8n để lấy gợi ý kế hoạch chương hiện tại
 router.post("/suggest-current", authMiddleware, chapterPlanController.suggestCurrentChapterPlan);
-// Route gọi n8n để lấy gợi ý kế hoạch chương
-router.post("/suggest", authMiddleware, chapterPlanController.suggestChapterPlan);
+
+// Route gọi n8n để lấy gợi ý kế hoạch chương tiếp theo
+router.post("/suggest-next", authMiddleware, chapterPlanController.suggestChapterPlan);
+
 // 2. Lấy danh sách toàn bộ kế hoạch chương theo storyId (URL chuẩn: /api/chapterPlan/stories/:storyId)
 router.get("/stories/:storyId", authMiddleware, chapterPlanController.getChapterPlansByStory);
 

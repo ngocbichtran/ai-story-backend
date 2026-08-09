@@ -120,9 +120,7 @@ exports.getStoryOutline = async (req, res) => {
 exports.updateStoryOutline = async (req, res) => {
   try {
     const { storyId } = req.params;
-
     const { fiveSentences, onePage, fourPages } = req.body;
-
     const userId = req.user?.id;
 
     // =====================================================
@@ -137,13 +135,13 @@ exports.updateStoryOutline = async (req, res) => {
     }
 
     // =====================================================
-    // CHECK STORY ID
+    // CHECK STORY ID (Hỗ trợ cả dạng số hoặc chuỗi)
     // =====================================================
 
-    if (!storyId || isNaN(Number(storyId))) {
+    if (!storyId) {
       return res.status(400).json({
         success: false,
-        message: "Mã truyện không hợp lệ.",
+        message: "Thiếu mã truyện (storyId).",
       });
     }
 
@@ -152,6 +150,13 @@ exports.updateStoryOutline = async (req, res) => {
     // =====================================================
 
     const mongoDb = getMongoDb();
+    if (!mongoDb) {
+      return res.status(500).json({
+        success: false,
+        message: "Mất kết nối MongoDB Atlas.",
+      });
+    }
+
     const collection = mongoDb.collection("story_outlines");
 
     // =====================================================
@@ -174,19 +179,21 @@ exports.updateStoryOutline = async (req, res) => {
       updateData.fourPages = fourPages;
     }
 
+    // Linh hoạt ép kiểu storyId sang Number nếu nó là dạng số, giữ nguyên nếu là string
+    const cleanStoryId = !isNaN(Number(storyId)) ? Number(storyId) : storyId;
+
     // =====================================================
     // UPDATE / UPSERT
     // =====================================================
 
-    await collection.updateOne(
+    const result = await collection.updateOne(
       {
-        storyId: Number(storyId),
+        storyId: cleanStoryId,
       },
       {
         $set: updateData,
-
         $setOnInsert: {
-          storyId: Number(storyId),
+          storyId: cleanStoryId,
           createdAt: new Date(),
         },
       },
@@ -194,6 +201,8 @@ exports.updateStoryOutline = async (req, res) => {
         upsert: true,
       },
     );
+
+    console.log("✅ Đã cập nhật outline thành công vào MongoDB:", result.modifiedCount || result.upsertedCount);
 
     // =====================================================
     // RESPONSE
@@ -213,6 +222,7 @@ exports.updateStoryOutline = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi lưu đề cương.",
+      error: error.message,
     });
   }
 };

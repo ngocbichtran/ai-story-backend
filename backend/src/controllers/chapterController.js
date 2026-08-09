@@ -696,7 +696,7 @@ exports.restoreChapterVersion = async (req, res) => {
 };
 
 // =====================================================
-// 12. AI GỢI Ý NỘI DUNG CHƯƠNG (Đã fix lỗi truy vấn MongoDB)
+// 12. AI GỢI Ý NỘI DUNG CHƯƠNG (Có thông báo lỗi chi tiết từng mục)
 // =====================================================
 exports.aiSuggestPlot = async (req, res) => {
   try {
@@ -705,11 +705,11 @@ exports.aiSuggestPlot = async (req, res) => {
     const userId = req.user?.id;
 
     if (!userId) {
-      return res.status(401).json({ success: false, message: "Phiên đăng nhập hết hạn." });
+      return res.status(401).json({ success: false, message: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại." });
     }
 
     if (!storyId || !chapterNumber) {
-      return res.status(400).json({ success: false, message: "Thiếu thông tin storyId hoặc chapterNumber." });
+      return res.status(400).json({ success: false, message: "Thiếu thông tin bắt buộc: storyId hoặc chapterNumber." });
     }
 
     const cleanStoryId = Number(storyId);
@@ -717,16 +717,41 @@ exports.aiSuggestPlot = async (req, res) => {
 
     const mongoDb = getMongoDb();
     if (!mongoDb) {
-      return res.status(500).json({ success: false, message: "Mất kết nối MongoDB Atlas." });
+      return res.status(500).json({ success: false, message: "Mất kết nối cơ sở dữ liệu MongoDB Atlas." });
     }
 
-    // 🟢 KIỂM TRA TỪ CHƯƠNG 2 TRỞ LÊN VỚI TRUY VẤN LINH HOẠT
+    // 🟢 BƯỚC 1: KIỂM TRA OUTLINE (Cốt truyện tổng thể)
+    const outlineCollection = mongoDb.collection("story_outlines");
+    const hasOutline = await outlineCollection.findOne({
+      $or: [{ storyId: cleanStoryId }, { story_id: cleanStoryId }, { storyId: String(cleanStoryId) }],
+    });
+
+    if (!hasOutline) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu dữ liệu: Bộ truyện này chưa có Khung cốt truyện (Story Outline). Vui lòng tạo Outline trước khi sử dụng AI gợi ý nội dung!",
+      });
+    }
+
+    // 🟢 BƯỚC 2: KIỂM TRA NHÂN VẬT (Characters)
+    const charCollection = mongoDb.collection("characters");
+    const hasCharacters = await charCollection.findOne({
+      $or: [{ storyId: cleanStoryId }, { story_id: cleanStoryId }, { storyId: String(cleanStoryId) }],
+    });
+
+    if (!hasCharacters) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu dữ liệu: Bộ truyện chưa có Nhân vật nào. Vui lòng tạo ít nhất một nhân vật để AI có cơ sở xây dựng tình tiết!",
+      });
+    }
+
+    // 🟢 BƯỚC 3: KIỂM TRA KẾ HOẠCH & NỘI DUNG (Áp dụng từ chương 2 trở lên)
     if (cleanChapterNumber > 1) {
       const planCollection = mongoDb.collection("chapter_plans");
       const contentCollection = mongoDb.collection("chapters_content");
       const previousChapterNumber = cleanChapterNumber - 1;
 
-      // Tạo cấu trúc truy vấn linh hoạt (hỗ trợ cả Number và String)
       const queryParams = {
         $or: [
           { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
@@ -743,37 +768,40 @@ exports.aiSuggestPlot = async (req, res) => {
         ],
       };
 
-      // 1. Kiểm tra kế hoạch
+      // 3.1. Kiểm tra kế hoạch chương hiện tại
       const currentPlan = await planCollection.findOne(queryParams);
-      const previousPlan = await planCollection.findOne(prevQueryParams);
-
-      if (!currentPlan && !previousPlan) {
+      if (!currentPlan) {
         return res.status(400).json({
           success: false,
-          message: `Vui lòng bổ sung kế hoạch cho chương ${cleanChapterNumber} hoặc ${previousChapterNumber} trước khi sử dụng AI!`,
+          message: `Thiếu dữ liệu: Chưa có Kế hoạch (Chapter Plan) cho Chương ${cleanChapterNumber}. Vui lòng tạo kế hoạch chương trước khi gọi AI!`,
         });
       }
 
-      // 2. Kiểm tra nội dung chương trước
+      // 3.2. Kiểm tra nội dung chương liền kề trước đó
       const previousChapter = await contentCollection.findOne(prevQueryParams);
-
-      // Nếu chương trước không tồn tại hoặc không có nội dung
       if (!previousChapter || !previousChapter.content || previousChapter.content.trim() === "") {
         return res.status(400).json({
           success: false,
-          message: `Chương ${previousChapterNumber} trước đó đang trống nội dung. Vui lòng viết nội dung cho chương trước trước khi gợi ý AI!`,
+          message: `Thiếu dữ liệu: Chương ${previousChapterNumber} ngay trước đó đang bị trống nội dung. Vui lòng viết hoàn thiện chương trước để làm ngữ cảnh cho AI!`,
         });
       }
     }
 
+    // 🟢 BƯỚC 4: GỌI N8N NẾU ĐÃ ĐỦ ĐIỀU KIỆN
     const N8N_PLOT_URL = "https://n8n.baostory.fun/webhook/suggest_chaptercontent";
     const payload = {
       storyId: cleanStoryId,
+      story_id: cleanStoryId,
       chapterNumber: cleanChapterNumber,
+      chapter_number: cleanChapterNumber,
       prompt: prompt || "",
       currentContent: currentContent || "",
+      current_content: currentContent || "",
       userId: Number(userId),
+      user_id: Number(userId),
     };
+
+    console.log("🔥 PAYLOAD GỬI N8N:", JSON.stringify(payload, null, 2));
 
     const response = await axios.post(N8N_PLOT_URL, payload, {
       headers: { "Content-Type": "application/json" },
@@ -781,7 +809,18 @@ exports.aiSuggestPlot = async (req, res) => {
       validateStatus: () => true,
     });
 
-    const aiContent = response.data.content || response.data.suggestion || response.data.data || response.data || "";
+    console.log("🔥 N8N RESPONSE STATUS:", response.status);
+    console.log("🔥 N8N RESPONSE DATA:", response.data);
+
+    if (response.status < 200 || response.status >= 300) {
+      return res.status(502).json({
+        success: false,
+        message: `Hệ thống n8n phản hồi lỗi HTTP ${response.status}`,
+        n8nError: response.data,
+      });
+    }
+
+    const aiContent = response.data.content || response.data.suggestion || response.data.data?.content || response.data.data || response.data || "";
 
     return res.status(200).json({
       success: true,
@@ -790,6 +829,6 @@ exports.aiSuggestPlot = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Lỗi AI Plot Suggestion:", error);
-    return res.status(500).json({ success: false, message: "Lỗi hệ thống khi gọi AI." });
+    return res.status(500).json({ success: false, message: "Lỗi hệ thống khi gọi AI gợi ý nội dung.", error: error.message });
   }
 };

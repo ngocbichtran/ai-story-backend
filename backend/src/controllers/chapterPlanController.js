@@ -291,203 +291,105 @@ exports.suggestChapterPlan = async (req, res) => {
       });
     }
 
+    // Kiểm tra story tồn tại trong MySQL (Vẫn giữ kiểm tra này để đảm bảo tính toàn vẹn)
     const [storyCheck] = await db.query("SELECT id FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
-
     if (!storyCheck || storyCheck.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Bộ truyện không tồn tại trên hệ thống.",
-      });
+      return res.status(404).json({ success: false, message: "Bộ truyện không tồn tại." });
     }
 
+    // Gọi N8N
     const n8nWebhook = "https://n8n.baostory.fun/webhook/suggest_1chapterplan_next";
     let n8nResponse;
-
     try {
       n8nResponse = await axios.post(
         n8nWebhook,
+        { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
         {
-          storyId: cleanStoryId,
-          chapterNumber: cleanChapterNumber,
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
           timeout: 120000,
           validateStatus: () => true,
         },
       );
     } catch (n8nError) {
       console.error("❌ Không kết nối được N8N:", n8nError.message);
-      return res.status(502).json({
-        success: false,
-        message: "Backend không thể kết nối tới N8N.",
-        error: n8nError.message,
-      });
+      return res.status(502).json({ success: false, message: "Backend không thể kết nối tới N8N.", error: n8nError.message });
     }
 
     if (n8nResponse.status < 200 || n8nResponse.status >= 300) {
-      return res.status(502).json({
-        success: false,
-        message: `N8N trả về HTTP ${n8nResponse.status}.`,
-        n8nStatus: n8nResponse.status,
-        n8nResponse: n8nResponse.data,
-      });
+      return res.status(502).json({ success: false, message: `N8N trả về HTTP ${n8nResponse.status}.`, n8nResponse: n8nResponse.data });
     }
 
+    // Xử lý dữ liệu trả về từ N8N
     let rawData = n8nResponse.data;
-    if (rawData && typeof rawData === "object" && !Array.isArray(rawData) && rawData.data !== undefined) {
-      rawData = rawData.data;
-    }
-    if (Array.isArray(rawData)) {
-      rawData = rawData[0];
-    }
-
-    let chapterPlan = rawData?.chapterPlan;
-    if (!chapterPlan && rawData?.chapterNumber) {
-      chapterPlan = rawData;
-    }
+    if (rawData?.data) rawData = rawData.data;
+    if (Array.isArray(rawData)) rawData = rawData[0];
+    let chapterPlan = rawData?.chapterPlan || (rawData?.chapterNumber ? rawData : null);
 
     if (!chapterPlan || typeof chapterPlan !== "object") {
-      return res.status(502).json({
-        success: false,
-        message: "N8N không trả về chapterPlan hợp lệ.",
-        n8nResponse: n8nResponse.data,
-      });
+      return res.status(502).json({ success: false, message: "N8N không trả về chapterPlan hợp lệ." });
     }
 
     const generatedChapterNumber = Number(chapterPlan.chapterNumber) || cleanChapterNumber;
     const generatedTitle = chapterPlan.title || `Chương ${generatedChapterNumber}`;
-    const generatedPurpose = chapterPlan.purpose || "";
-    const generatedConflict = chapterPlan.conflict || "";
-    const generatedEndingHook = chapterPlan.endingHook || "";
 
     const mongoDb = getMongoDb();
-    if (!mongoDb) {
-      return res.status(500).json({
-        success: false,
-        message: "Mất kết nối MongoDB.",
-      });
-    }
+    if (!mongoDb) return res.status(500).json({ success: false, message: "Mất kết nối MongoDB." });
 
-    const chapterPlansCollection = mongoDb.collection("chapter_plans");
-    const existingPlan = await chapterPlansCollection.findOne({
-      storyId: cleanStoryId,
-      chapterNumber: generatedChapterNumber,
-    });
+    const planCollection = mongoDb.collection("chapter_plans");
+    const contentCollection = mongoDb.collection("chapters_content");
 
-    let savedPlan;
-
-    if (existingPlan) {
-      await chapterPlansCollection.updateOne(
-        { _id: existingPlan._id },
-        {
-          $set: {
-            title: generatedTitle,
-            purpose: generatedPurpose,
-            conflict: generatedConflict,
-            endingHook: generatedEndingHook,
-            updatedAt: new Date(),
-          },
+    // 1. UPSERT Kế hoạch chương (MongoDB)
+    await planCollection.updateOne(
+      { storyId: cleanStoryId, chapterNumber: generatedChapterNumber },
+      {
+        $set: {
+          title: generatedTitle,
+          purpose: chapterPlan.purpose || "",
+          conflict: chapterPlan.conflict || "",
+          endingHook: chapterPlan.endingHook || "",
+          updatedAt: new Date(),
         },
-      );
+        $setOnInsert: { createdAt: new Date() },
+      },
+      { upsert: true },
+    );
 
-      savedPlan = {
-        ...existingPlan,
-        title: generatedTitle,
-        purpose: generatedPurpose,
-        conflict: generatedConflict,
-        endingHook: generatedEndingHook,
-      };
-    } else {
-      const newPlanDoc = {
-        storyId: cleanStoryId,
-        chapterNumber: generatedChapterNumber,
-        title: generatedTitle,
-        purpose: generatedPurpose,
-        conflict: generatedConflict,
-        endingHook: generatedEndingHook,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+    // 2. UPSERT Chương rỗng (MongoDB - Thay thế hoàn toàn cho MySQL chapters_content)
+    const chapterUpdateResult = await contentCollection.findOneAndUpdate(
+      { storyId: cleanStoryId, chapterNumber: generatedChapterNumber },
+      {
+        $setOnInsert: {
+          storyId: cleanStoryId,
+          chapterNumber: generatedChapterNumber,
+          content: "",
+          status: "DRAFT",
+          createdAt: new Date(),
+        },
+        $set: {
+          title: generatedTitle,
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true, returnDocument: "after" },
+    );
 
-      const insertResult = await chapterPlansCollection.insertOne(newPlanDoc);
-      savedPlan = {
-        _id: insertResult.insertedId,
-        ...newPlanDoc,
-      };
-    }
-
-    // Tự động tạo chương rỗng (MySQL + MongoDB)
-    let chapterId = null;
-    let chapterCreated = false;
-
-    try {
-      const [existingChapter] = await db.query(`SELECT id FROM chapters_content WHERE story_id = ? AND chapter_number = ? LIMIT 1`, [cleanStoryId, generatedChapterNumber]);
-
-      const contentCollection = mongoDb.collection("chapters_content");
-
-      if (existingChapter && existingChapter.length > 0) {
-        chapterId = existingChapter[0].id;
-
-        // 🟢 Đảm bảo bên Mongo cũng đồng bộ cập nhật/tồn tại mà không sợ lỗi duplicate
-        await contentCollection.updateOne({ storyId: cleanStoryId, chapterNumber: generatedChapterNumber }, { $setOnInsert: { title: generatedTitle, content: "", status: "DRAFT", createdAt: new Date() }, $set: { updatedAt: new Date() } }, { upsert: true });
-      } else {
-        const [chapterInsert] = await db.query(`INSERT INTO chapters_content (story_id, chapter_number, title, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())`, [cleanStoryId, generatedChapterNumber, generatedTitle]);
-
-        chapterId = chapterInsert.insertId;
-
-        // Dùng updateOne với upsert: true thay cho insertOne để tránh văng lỗi duplicate key
-        await contentCollection.updateOne(
-          { storyId: cleanStoryId, chapterNumber: generatedChapterNumber },
-          {
-            $setOnInsert: {
-              title: generatedTitle,
-              content: "",
-              status: "DRAFT",
-              createdAt: new Date(),
-            },
-            $set: { updatedAt: new Date() },
-          },
-          { upsert: true },
-        );
-
-        chapterCreated = true;
-      }
-    } catch (chapterError) {
-      console.error("❌ Lỗi tạo Chapter:", chapterError);
-      return res.status(500).json({
-        success: false,
-        message: "Đã tạo kế hoạch chương nhưng không thể khởi tạo nội dung chương.",
-        error: chapterError.message,
-      });
-    }
+    const savedChapter = chapterUpdateResult.value || chapterUpdateResult;
 
     return res.status(200).json({
       success: true,
       message: "AI đã tạo kế hoạch chương và khởi tạo chương thành công.",
       data: {
-        planId: savedPlan._id ? savedPlan._id.toString() : null,
-        chapterId,
+        planId: null, // Có thể lấy từ planCollection nếu cần
+        chapterId: savedChapter._id ? savedChapter._id.toString() : null,
         storyId: cleanStoryId,
         chapterNumber: generatedChapterNumber,
         title: generatedTitle,
-        purpose: generatedPurpose,
-        conflict: generatedConflict,
-        endingHook: generatedEndingHook,
         content: "",
-        chapterCreated,
       },
     });
   } catch (error) {
     console.error("❌ LỖI suggestChapterPlan:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Lỗi hệ thống khi tạo kế hoạch chương.",
-      error: error.message,
-    });
+    return res.status(500).json({ success: false, message: "Lỗi hệ thống khi tạo kế hoạch chương.", error: error.message });
   }
 };
 

@@ -411,25 +411,44 @@ exports.suggestChapterPlan = async (req, res) => {
     }
 
     // ============================================================
-    // 8. XỬ LÝ DỮ LIỆU N8N TRẢ VỀ
+    // 8. XỬ LÝ DỮ LIỆU N8N TRẢ VỀ (Đã chuẩn hóa bóc tách đa tầng)
     // ============================================================
 
     let rawData = n8nResponse.data;
 
-    if (rawData?.data) {
-      rawData = rawData.data;
+    // Bóc tách các tầng bọc phổ biến của n8n hoặc axios
+    if (typeof rawData === "string") {
+      try {
+        rawData = JSON.parse(rawData.trim());
+      } catch (e) {
+        // Giữ nguyên nếu không phải chuỗi JSON
+      }
+    }
+
+    if (rawData && typeof rawData === "object") {
+      if (rawData.data) rawData = rawData.data;
+      if (rawData.json) rawData = rawData.json;
     }
 
     if (Array.isArray(rawData)) {
-      rawData = rawData[0];
+      rawData = rawData[0] || null;
     }
 
-    let chapterPlan = rawData?.chapterPlan || (rawData?.chapterNumber ? rawData : null);
+    // Trích xuất chính xác object chapterPlan từ cấu trúc { chapterPlan: { ... } }
+    let chapterPlan = null;
+    if (rawData && typeof rawData === "object") {
+      if (rawData.chapterPlan && typeof rawData.chapterPlan === "object") {
+        chapterPlan = rawData.chapterPlan;
+      } else if (rawData.chapterNumber) {
+        chapterPlan = rawData; // Phòng hờ n8n trả về trực tiếp object không qua key bọc
+      }
+    }
 
     if (!chapterPlan || typeof chapterPlan !== "object") {
       return res.status(502).json({
         success: false,
         message: "N8N không trả về chapterPlan hợp lệ.",
+        rawReceived: n8nResponse.data, // Giúp bạn dễ debug trực tiếp trên Postman nếu có thay đổi
       });
     }
 

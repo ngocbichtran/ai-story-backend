@@ -45,7 +45,6 @@ const saveDerivativeCharacters = async (storyId, characters, userId) => {
 
   const charactersToInsert = characters.map((char) => ({
     storyId: Number(storyId),
-    // 🌟 Lưu lại ID của nhân vật gốc để truy xuất ngược khi cần
     originalCharacterId: char.originalCharacterId || char.id || char._id || null,
     name: char.name || "Nhân vật mới",
     role: char.role || "Nhân vật phụ",
@@ -59,6 +58,8 @@ const saveDerivativeCharacters = async (storyId, characters, userId) => {
     relationship: char.relationship || [],
     avatar: char.avatar || "",
     tags: char.tags || [],
+    isDeleted: false, // 🟢 Bổ sung cờ trạng thái xóa mềm mặc định là false
+    deletedAt: null, // 🟢 Mốc thời gian xóa mềm mặc định là null
     createdBy: userId,
     createdAt: new Date(),
     updatedAt: new Date(),

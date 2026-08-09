@@ -1,7 +1,9 @@
 const db = require("../config/db"); // File kết nối MySQL của bạn
 const { getMongoDb } = require("../config/mongo"); // File kết nối MongoDB của bạn
 
-// 2. Hàm hỗ trợ: Lưu mảng kế hoạch chương phái sinh vào MongoDB
+// =========================================================================
+// HÀM HỖ TRỢ: LƯU KẾ HOẠCH CHƯƠNG VÀ TỰ ĐỘNG TẠO CHƯƠNG RỖNG TƯƠNG ỨNG
+// =========================================================================
 const saveDerivativeChapterPlans = async (storyId, chapterPlans) => {
   if (!chapterPlans || !Array.isArray(chapterPlans) || chapterPlans.length === 0) {
     return true;
@@ -10,21 +12,60 @@ const saveDerivativeChapterPlans = async (storyId, chapterPlans) => {
   const mongoDb = getMongoDb();
   if (!mongoDb) throw new Error("Chưa kết nối đến MongoDB Atlas!");
 
-  const collection = mongoDb.collection("chapter_plans");
+  const planCollection = mongoDb.collection("chapter_plans");
+  const contentCollection = mongoDb.collection("chapters_content");
 
   const flatPlans = Array.isArray(chapterPlans[0]) ? chapterPlans.flat(Infinity) : chapterPlans;
 
-  const plansToInsert = flatPlans.map((plan, index) => ({
-    storyId: Number(storyId),
-    chapterNumber: plan.chapterNumber || index + 1,
-    title: plan.title || `Chương ${index + 1}`,
-    summary: plan.summary || plan.background || "",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  }));
+  for (let index = 0; index < flatPlans.length; index++) {
+    const plan = flatPlans[index];
+    const chapterNumber = Number(plan.chapterNumber || index + 1);
+    const title = plan.title || `Chương ${chapterNumber}`;
+    const summary = plan.summary || plan.background || "";
 
-  if (plansToInsert.length > 0) {
-    await collection.insertMany(plansToInsert);
+    // 1. Lưu hoặc cập nhật kế hoạch chương
+    await planCollection.findOneAndUpdate(
+      {
+        storyId: Number(storyId),
+        chapterNumber: chapterNumber,
+      },
+      {
+        $setOnInsert: {
+          storyId: Number(storyId),
+          chapterNumber: chapterNumber,
+          createdAt: new Date(),
+        },
+        $set: {
+          title,
+          summary,
+          purpose: plan.purpose || "",
+          conflict: plan.conflict || "",
+          endingHook: plan.endingHook || "",
+          updatedAt: new Date(),
+        },
+      },
+      {
+        upsert: true,
+      },
+    );
+
+    // 2. 🌟 Tự động kiểm tra và tạo chương rỗng trong chapters_content nếu chưa có
+    const existingChapter = await contentCollection.findOne({
+      storyId: Number(storyId),
+      chapterNumber: chapterNumber,
+    });
+
+    if (!existingChapter) {
+      await contentCollection.insertOne({
+        storyId: Number(storyId),
+        chapterNumber: chapterNumber,
+        title: title,
+        content: "",
+        status: "DRAFT",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
   }
 
   return true;

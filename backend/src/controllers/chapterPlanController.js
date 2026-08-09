@@ -535,3 +535,162 @@ exports.suggestCurrentChapterPlan = async (req, res) => {
     });
   }
 };
+// =========================================================================
+// HÀM CONTROLLER GỌI N8N TẠO 5 KẾ HOẠCH CHƯƠNG ĐẦU TIÊN + KHỞI TẠO CHƯƠNG RỖNG
+// =========================================================================
+exports.suggestInitialChapterPlans = async (req, res) => {
+  try {
+    const { storyId } = req.body;
+
+    if (!storyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng cung cấp storyId để tạo 5 kế hoạch chương đầu tiên.",
+      });
+    }
+
+    const cleanStoryId = Number(storyId);
+
+    if (!Number.isInteger(cleanStoryId) || cleanStoryId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "storyId phải là số nguyên dương hợp lệ.",
+      });
+    }
+
+    // Kiểm tra story tồn tại trong MySQL
+    const [storyCheck] = await db.query("SELECT id FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
+    if (!storyCheck || storyCheck.length === 0) {
+      return res.status(404).json({ success: false, message: "Bộ truyện không tồn tại trên hệ thống." });
+    }
+
+    // Gọi N8N Webhook để lấy 5 kế hoạch đầu
+    const n8nWebhook = "https://n8n.baostory.fun/webhook/suggest_chapterplan";
+    let n8nResponse;
+    try {
+      n8nResponse = await axios.post(
+        n8nWebhook,
+        { storyId: cleanStoryId },
+        {
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          timeout: 120000,
+          validateStatus: () => true,
+        },
+      );
+    } catch (n8nError) {
+      console.error("❌ Không kết nối được N8N:", n8nError.message);
+      return res.status(502).json({ success: false, message: "Backend không thể kết nối tới N8N.", error: n8nError.message });
+    }
+
+    if (n8nResponse.status < 200 || n8nResponse.status >= 300) {
+      return res.status(502).json({ success: false, message: `N8N trả về HTTP ${n8nResponse.status}.`, n8nResponse: n8nResponse.data });
+    }
+
+    // Chuẩn hóa dữ liệu trả về từ N8N (hỗ trợ cả dạng mảng hoặc object chứa mảng)
+    let rawData = n8nResponse.data;
+    if (rawData?.data) rawData = rawData.data;
+
+    // Nếu n8n trả về mảng trực tiếp hoặc mảng nằm trong thuộc tính khác
+    let plansArray = [];
+    if (Array.isArray(rawData)) {
+      plansArray = rawData;
+    } else if (rawData && typeof rawData === "object") {
+      // Tìm xem có thuộc tính nào là mảng chứa các kế hoạch chương không
+      plansArray = rawData.chapterPlans || rawData.plans || rawData.chapters || Object.values(rawData).find((val) => Array.isArray(val)) || [];
+    }
+
+    if (!Array.isArray(plansArray) || plansArray.length === 0) {
+      return res.status(502).json({ success: false, message: "N8N không trả về danh sách kế hoạch chương hợp lệ.", n8nResponse: n8nResponse.data });
+    }
+
+    const mongoDb = getMongoDb();
+    if (!mongoDb) return res.status(500).json({ success: false, message: "Mất kết nối cơ sở dữ liệu MongoDB." });
+
+    const planCollection = mongoDb.collection("chapter_plans");
+    const contentCollection = mongoDb.collection("chapters_content");
+
+    const processedPlans = [];
+
+    // Duyệt qua từng kế hoạch chương do AI trả về để lưu trữ
+    for (const item of plansArray) {
+      const chapterPlan = item.chapterPlan || item;
+      const chapterNumber = Number(chapterPlan.chapterNumber || chapterPlan.chapter_number);
+
+      if (!chapterNumber || isNaN(chapterNumber)) continue;
+
+      const title = chapterPlan.title || `Chương ${chapterNumber}`;
+      const purpose = chapterPlan.purpose || "";
+      const conflict = chapterPlan.conflict || "";
+      const endingHook = chapterPlan.endingHook || "";
+      const summary = chapterPlan.summary || "";
+
+      // 1. Upsert kế hoạch chương vào MongoDB
+      const planUpdateResult = await planCollection.findOneAndUpdate(
+        { storyId: cleanStoryId, chapterNumber: chapterNumber },
+        {
+          $setOnInsert: {
+            storyId: cleanStoryId,
+            chapterNumber: chapterNumber,
+            createdAt: new Date(),
+          },
+          $set: {
+            title,
+            summary,
+            purpose,
+            conflict,
+            endingHook,
+            updatedAt: new Date(),
+          },
+        },
+        { upsert: true, returnDocument: "after" },
+      );
+
+      const savedPlan = planUpdateResult.value || planUpdateResult;
+
+      // 2. Kiểm tra xem chương nội dung tương ứng đã có chưa, nếu chưa thì tạo chương rỗng
+      const existingChapter = await contentCollection.findOne({
+        storyId: cleanStoryId,
+        chapterNumber: chapterNumber,
+      });
+
+      let chapterId = null;
+      if (existingChapter) {
+        chapterId = existingChapter._id.toString();
+      } else {
+        const newChapterDoc = {
+          storyId: cleanStoryId,
+          chapterNumber: chapterNumber,
+          title: title,
+          content: "",
+          status: "DRAFT",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        const insertResult = await contentCollection.insertOne(newChapterDoc);
+        chapterId = insertResult.insertedId.toString();
+      }
+
+      processedPlans.push({
+        planId: savedPlan._id ? savedPlan._id.toString() : null,
+        chapterId,
+        storyId: cleanStoryId,
+        chapterNumber,
+        title,
+        summary,
+        purpose,
+        conflict,
+        endingHook,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "AI đã tạo thành công 5 kế hoạch chương đầu tiên và khởi tạo các chương rỗng tương ứng.",
+      data: processedPlans,
+    });
+  } catch (error) {
+    console.error("❌ LỖI suggestInitialChapterPlans:", error);
+    return res.status(500).json({ success: false, message: "Lỗi hệ thống khi tạo 5 kế hoạch chương đầu.", error: error.message });
+  }
+};

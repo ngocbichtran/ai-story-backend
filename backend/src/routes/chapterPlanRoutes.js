@@ -8,6 +8,8 @@ router.post("/suggest-current", authMiddleware, chapterPlanController.suggestCur
 
 // Route gọi n8n để lấy gợi ý kế hoạch chương tiếp theo
 router.post("/suggest-next", authMiddleware, chapterPlanController.suggestChapterPlan);
+// Route gọi n8n để lấy gợi ý 5 kế hoạch chương đầu tiên (dành cho phái sinh)
+router.post("/suggest", authMiddleware, chapterPlanController.suggestInitialChapterPlans);
 
 // 2. Lấy danh sách toàn bộ kế hoạch chương theo storyId (URL chuẩn: /api/chapterPlan/stories/:storyId)
 router.get("/stories/:storyId", authMiddleware, chapterPlanController.getChapterPlansByStory);

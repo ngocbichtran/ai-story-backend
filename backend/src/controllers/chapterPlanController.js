@@ -570,11 +570,17 @@ exports.suggestChapterPlan = async (req, res) => {
   }
 };
 // =========================================================================
-// HÀM CONTROLLER GỢI Ý KẾ HOẠCH CHƯƠNG HIỆN TẠI (CHỈ GỢI Ý, KHÔNG TẠO CHƯƠNG)
+// HÀM CONTROLLER GỢI Ý KẾ HOẠCH CHƯƠNG HIỆN TẠI
+// CHỈ GỢI Ý, KHÔNG TẠO CHƯƠNG
+// + TỰ ĐỘNG LẤY WORLD TỪ MONGODB
 // =========================================================================
 exports.suggestCurrentChapterPlan = async (req, res) => {
   try {
     const { storyId, chapterNumber } = req.body;
+
+    // ============================================================
+    // 1. KIỂM TRA INPUT
+    // ============================================================
 
     if (!storyId || !chapterNumber) {
       return res.status(400).json({
@@ -593,6 +599,10 @@ exports.suggestCurrentChapterPlan = async (req, res) => {
       });
     }
 
+    // ============================================================
+    // 2. KIỂM TRA STORY TRONG MYSQL
+    // ============================================================
+
     const [storyCheck] = await db.query(`SELECT id FROM stories WHERE id = ? AND deleted_at IS NULL`, [cleanStoryId]);
 
     if (!storyCheck || storyCheck.length === 0) {
@@ -602,7 +612,58 @@ exports.suggestCurrentChapterPlan = async (req, res) => {
       });
     }
 
+    // ============================================================
+    // 3. KẾT NỐI MONGODB
+    // ============================================================
+
+    const mongoDb = getMongoDb();
+
+    if (!mongoDb) {
+      return res.status(500).json({
+        success: false,
+        message: "Mất kết nối MongoDB.",
+      });
+    }
+
+    // ============================================================
+    // 4. LẤY WORLD CỦA STORY
+    // ============================================================
+
+    const worldCollection = mongoDb.collection("worlds");
+
+    const world = await worldCollection.findOne({
+      storyId: cleanStoryId,
+    });
+
+    if (!world) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy thông tin thế giới của bộ truyện.",
+        storyId: cleanStoryId,
+      });
+    }
+
+    // ============================================================
+    // 5. CHUẨN HÓA WORLD
+    // ============================================================
+
+    const worldData = {
+      storyId: world.storyId,
+      title: world.title || "",
+      description: world.description || "",
+      history: world.history || "",
+      culture: world.culture || "",
+      geography: world.geography || [],
+      powerSystems: world.powerSystems || [],
+      rules: world.rules || [],
+    };
+
+    // ============================================================
+    // 6. GỌI N8N
+    // ============================================================
+
     const n8nWebhook = "https://n8n.baostory.fun/webhook/suggest_1chapterplan_now";
+
     let n8nResponse;
 
     try {
@@ -611,6 +672,9 @@ exports.suggestCurrentChapterPlan = async (req, res) => {
         {
           storyId: cleanStoryId,
           chapterNumber: cleanChapterNumber,
+
+          // ⭐ TRUYỀN WORLD SANG N8N
+          world: worldData,
         },
         {
           headers: {
@@ -623,12 +687,17 @@ exports.suggestCurrentChapterPlan = async (req, res) => {
       );
     } catch (n8nError) {
       console.error("❌ Không kết nối được N8N:", n8nError.message);
+
       return res.status(502).json({
         success: false,
         message: "Backend không thể kết nối tới N8N.",
         error: n8nError.message,
       });
     }
+
+    // ============================================================
+    // 7. KIỂM TRA RESPONSE N8N
+    // ============================================================
 
     if (n8nResponse.status < 200 || n8nResponse.status >= 300) {
       return res.status(502).json({
@@ -639,15 +708,22 @@ exports.suggestCurrentChapterPlan = async (req, res) => {
       });
     }
 
+    // ============================================================
+    // 8. XỬ LÝ DATA N8N
+    // ============================================================
+
     let rawData = n8nResponse.data;
+
     if (rawData && typeof rawData === "object" && !Array.isArray(rawData) && rawData.data !== undefined) {
       rawData = rawData.data;
     }
+
     if (Array.isArray(rawData)) {
       rawData = rawData[0];
     }
 
     let chapterPlan = rawData?.chapterPlan;
+
     if (!chapterPlan && rawData && typeof rawData === "object" && rawData.chapterNumber) {
       chapterPlan = rawData;
     }
@@ -660,26 +736,45 @@ exports.suggestCurrentChapterPlan = async (req, res) => {
       });
     }
 
+    // ============================================================
+    // 9. LẤY THÔNG TIN KẾ HOẠCH
+    // ============================================================
+
     const generatedChapterNumber = Number(chapterPlan.chapterNumber) || cleanChapterNumber;
+
     const generatedTitle = chapterPlan.title || `Chương ${generatedChapterNumber}`;
+
     const generatedPurpose = chapterPlan.purpose || "";
+
     const generatedConflict = chapterPlan.conflict || "";
+
     const generatedEndingHook = chapterPlan.endingHook || "";
+
+    // ============================================================
+    // 10. RESPONSE VỀ FRONTEND
+    // ============================================================
 
     return res.status(200).json({
       success: true,
       message: "AI đã gợi ý kế hoạch chương hiện tại thành công.",
+
       data: {
         storyId: cleanStoryId,
+
         chapterNumber: generatedChapterNumber,
+
         title: generatedTitle,
+
         purpose: generatedPurpose,
+
         conflict: generatedConflict,
+
         endingHook: generatedEndingHook,
       },
     });
   } catch (error) {
     console.error("❌ LỖI suggestCurrentChapterPlan:", error);
+
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi gợi ý kế hoạch chương hiện tại.",

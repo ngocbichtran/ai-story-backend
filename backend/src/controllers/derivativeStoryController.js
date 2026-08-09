@@ -104,7 +104,7 @@ exports.createDerivativeStory = async (req, res) => {
     const [result] = await db.query(`INSERT INTO stories (user_id, title, description, cover_image, original_story_id, status) VALUES (?, ?, ?, ?, ?, 'DRAFT')`, [userId, title.trim(), originalDescription, coverImage || null, originalStoryId]);
     const newStoryId = result.insertId;
 
-    // (Tùy chọn) 1.1: Nếu bạn muốn sao chép luôn các thể loại (genres) từ truyện gốc sang truyện phái sinh:
+    // 1.1: Sao chép các thể loại (genres) từ truyện gốc sang truyện phái sinh
     const [originalGenres] = await db.query(`SELECT genre_id FROM story_genres WHERE story_id = ?`, [originalStoryId]);
     if (originalGenres && originalGenres.length > 0) {
       const genreInserts = originalGenres.map((g) => [newStoryId, g.genre_id]);
@@ -124,6 +124,41 @@ exports.createDerivativeStory = async (req, res) => {
       updatedAt: new Date(),
     });
 
+    // 🌟 Bước 2.1: SAO CHÉP THẾ GIỚI (WORLDS) TỪ TRUYỆN GỐC SANG TRUYỆN PHÁI SINH
+    const worldsCollection = mongoDb.collection("worlds");
+    const originalWorld = await worldsCollection.findOne({ storyId: Number(originalStoryId) });
+
+    if (originalWorld) {
+      await worldsCollection.insertOne({
+        storyId: Number(newStoryId),
+        title: originalWorld.title ? `${originalWorld.title} (Phái sinh)` : title.trim(),
+        description: originalWorld.description || "",
+        geography: originalWorld.geography || { continents: [], regions: [] },
+        history: originalWorld.history || "",
+        culture: originalWorld.culture || "",
+        powerSystem: originalWorld.powerSystem || { name: "", description: "" },
+        rules: originalWorld.rules || [],
+        createdBy: Number(userId),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    } else {
+      // Nếu truyện gốc chưa có world, khởi tạo một bản ghi thế giới rỗng mặc định
+      await worldsCollection.insertOne({
+        storyId: Number(newStoryId),
+        title: title.trim(),
+        description: "",
+        geography: { continents: [], regions: [] },
+        history: "",
+        culture: "",
+        powerSystem: { name: "", description: "" },
+        rules: [],
+        createdBy: Number(userId),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+
     // Bước 3: Lưu mảng Kế hoạch chương (Chapter Plans) vào MongoDB
     if (chapterPlans && Array.isArray(chapterPlans)) {
       await saveDerivativeChapterPlans(newStoryId, chapterPlans);
@@ -136,7 +171,7 @@ exports.createDerivativeStory = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: "Tạo truyện phái sinh, sao chép thông tin, thể loại, nhân vật và kế hoạch chương thành công!",
+      message: "Tạo truyện phái sinh, sao chép thông tin, thể loại, thế giới, nhân vật và kế hoạch chương thành công!",
       storyId: newStoryId,
     });
   } catch (error) {

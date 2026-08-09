@@ -696,7 +696,7 @@ exports.restoreChapterVersion = async (req, res) => {
 };
 
 // =====================================================
-// 12. AI GỢI Ý NỘI DUNG CHƯƠNG (Nối n8n - Có kiểm tra chương trước & kế hoạch từ chương 2)
+// 12. AI GỢI Ý NỘI DUNG CHƯƠNG (Đã fix lỗi truy vấn MongoDB)
 // =====================================================
 exports.aiSuggestPlot = async (req, res) => {
   try {
@@ -709,10 +709,7 @@ exports.aiSuggestPlot = async (req, res) => {
     }
 
     if (!storyId || !chapterNumber) {
-      return res.status(400).json({
-        success: false,
-        message: "Thiếu thông tin storyId hoặc chapterNumber.",
-      });
+      return res.status(400).json({ success: false, message: "Thiếu thông tin storyId hoặc chapterNumber." });
     }
 
     const cleanStoryId = Number(storyId);
@@ -723,47 +720,53 @@ exports.aiSuggestPlot = async (req, res) => {
       return res.status(500).json({ success: false, message: "Mất kết nối MongoDB Atlas." });
     }
 
-    // 🟢 KIỂM TRA ĐIỀU KIỆN TỪ CHƯƠNG 2 TRỞ LÊN
+    // 🟢 KIỂM TRA TỪ CHƯƠNG 2 TRỞ LÊN VỚI TRUY VẤN LINH HOẠT
     if (cleanChapterNumber > 1) {
       const planCollection = mongoDb.collection("chapter_plans");
       const contentCollection = mongoDb.collection("chapters_content");
-
       const previousChapterNumber = cleanChapterNumber - 1;
 
-      // 1. Kiểm tra xem đã có kế hoạch cho chương hiện tại hoặc chương trước chưa
-      const currentPlan = await planCollection.findOne({
-        storyId: cleanStoryId,
-        chapterNumber: cleanChapterNumber,
-      });
+      // Tạo cấu trúc truy vấn linh hoạt (hỗ trợ cả Number và String)
+      const queryParams = {
+        $or: [
+          { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
+          { story_id: cleanStoryId, chapter_number: cleanChapterNumber },
+          { storyId: String(cleanStoryId), chapterNumber: Number(cleanChapterNumber) },
+        ],
+      };
 
-      const previousPlan = await planCollection.findOne({
-        storyId: cleanStoryId,
-        chapterNumber: previousChapterNumber,
-      });
+      const prevQueryParams = {
+        $or: [
+          { storyId: cleanStoryId, chapterNumber: previousChapterNumber },
+          { story_id: cleanStoryId, chapter_number: previousChapterNumber },
+          { storyId: String(cleanStoryId), chapterNumber: Number(previousChapterNumber) },
+        ],
+      };
+
+      // 1. Kiểm tra kế hoạch
+      const currentPlan = await planCollection.findOne(queryParams);
+      const previousPlan = await planCollection.findOne(prevQueryParams);
 
       if (!currentPlan && !previousPlan) {
         return res.status(400).json({
           success: false,
-          message: `Vui lòng bổ sung kế hoạch cho chương ${cleanChapterNumber} trước khi sử dụng tính năng gợi ý từ AI!`,
+          message: `Vui lòng bổ sung kế hoạch cho chương ${cleanChapterNumber} hoặc ${previousChapterNumber} trước khi sử dụng AI!`,
         });
       }
 
-      // 2. Kiểm tra nội dung chương liền kề trước đó (chương N-1) có bị trống không
-      const previousChapter = await contentCollection.findOne({
-        storyId: cleanStoryId,
-        chapterNumber: previousChapterNumber,
-      });
+      // 2. Kiểm tra nội dung chương trước
+      const previousChapter = await contentCollection.findOne(prevQueryParams);
 
+      // Nếu chương trước không tồn tại hoặc không có nội dung
       if (!previousChapter || !previousChapter.content || previousChapter.content.trim() === "") {
         return res.status(400).json({
           success: false,
-          message: `Chương ${previousChapterNumber} trước đó đang trống nội dung. Vui lòng viết hoặc hoàn thiện chương trước trước khi gợi ý nội dung cho chương này!`,
+          message: `Chương ${previousChapterNumber} trước đó đang trống nội dung. Vui lòng viết nội dung cho chương trước trước khi gợi ý AI!`,
         });
       }
     }
 
     const N8N_PLOT_URL = "https://n8n.baostory.fun/webhook/suggest_chaptercontent";
-
     const payload = {
       storyId: cleanStoryId,
       chapterNumber: cleanChapterNumber,
@@ -772,18 +775,12 @@ exports.aiSuggestPlot = async (req, res) => {
       userId: Number(userId),
     };
 
-    console.log("🔥 PAYLOAD GỬI N8N:", JSON.stringify(payload, null, 2));
-    console.log("🔥 N8N URL:", N8N_PLOT_URL);
-
     const response = await axios.post(N8N_PLOT_URL, payload, {
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       timeout: 120000,
       validateStatus: () => true,
     });
 
-    console.log("🔥 N8N RESPONSE:", response.status, response.data);
     const aiContent = response.data.content || response.data.suggestion || response.data.data || response.data || "";
 
     return res.status(200).json({

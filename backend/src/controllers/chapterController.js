@@ -696,34 +696,73 @@ exports.restoreChapterVersion = async (req, res) => {
 };
 
 // =====================================================
-// 12. AI GỢI Ý NỘI DUNG CHƯƠNG (Đã khóa chặt điều kiện nhân vật)
+// 12. AI GỢI Ý NỘI DUNG CHƯƠNG
+// + KIỂM TRA OUTLINE
+// + KIỂM TRA CHARACTERS
+// + KIỂM TRA CHAPTER PLAN
+// + KIỂM TRA CHAPTER TRƯỚC
+// + LẤY WORLD TỪ MONGODB
 // =====================================================
 exports.aiSuggestPlot = async (req, res) => {
   try {
     const { chapterNumber } = req.params;
     const { storyId, prompt, currentContent } = req.body;
+
     const userId = req.user?.id;
 
-    console.log("🔥 ĐANG CHẠY AI SUGGEST PLOT CHO STORY ID:", storyId, "CHƯƠNG:", chapterNumber);
+    console.log("🔥 ĐANG CHẠY AI SUGGEST PLOT:", "STORY:", storyId, "CHƯƠNG:", chapterNumber);
+
+    // =====================================================
+    // 1. KIỂM TRA USER
+    // =====================================================
 
     if (!userId) {
-      return res.status(401).json({ success: false, message: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại." });
+      return res.status(401).json({
+        success: false,
+        message: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+      });
     }
 
+    // =====================================================
+    // 2. KIỂM TRA INPUT
+    // =====================================================
+
     if (!storyId || !chapterNumber) {
-      return res.status(400).json({ success: false, message: "Thiếu thông tin bắt buộc: storyId hoặc chapterNumber." });
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu thông tin bắt buộc: storyId hoặc chapterNumber.",
+      });
     }
 
     const cleanStoryId = Number(storyId);
     const cleanChapterNumber = Number(chapterNumber);
 
-    const mongoDb = getMongoDb();
-    if (!mongoDb) {
-      return res.status(500).json({ success: false, message: "Mất kết nối cơ sở dữ liệu MongoDB Atlas." });
+    if (!Number.isInteger(cleanStoryId) || cleanStoryId <= 0 || !Number.isInteger(cleanChapterNumber) || cleanChapterNumber <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "storyId và chapterNumber phải là số nguyên dương.",
+      });
     }
 
-    // 🟢 BƯỚC 1: KIỂM TRA OUTLINE
+    // =====================================================
+    // 3. KẾT NỐI MONGODB
+    // =====================================================
+
+    const mongoDb = getMongoDb();
+
+    if (!mongoDb) {
+      return res.status(500).json({
+        success: false,
+        message: "Mất kết nối cơ sở dữ liệu MongoDB Atlas.",
+      });
+    }
+
+    // =====================================================
+    // 4. KIỂM TRA OUTLINE
+    // =====================================================
+
     const outlineCollection = mongoDb.collection("story_outlines");
+
     const hasOutline = await outlineCollection.findOne({
       $or: [{ storyId: cleanStoryId }, { story_id: cleanStoryId }, { storyId: String(cleanStoryId) }, { story_id: String(cleanStoryId) }],
     });
@@ -735,47 +774,118 @@ exports.aiSuggestPlot = async (req, res) => {
       });
     }
 
-    // 🟢 BƯỚC 2: KIỂM TRA NHÂN VẬT (Characters - Chỉ tính nhân vật chưa xóa mềm)
+    // =====================================================
+    // 5. KIỂM TRA CHARACTERS
+    // =====================================================
+
     const charCollection = mongoDb.collection("characters");
 
     const characterCount = await charCollection.countDocuments({
       $or: [{ storyId: cleanStoryId }, { story_id: cleanStoryId }, { storyId: String(cleanStoryId) }, { story_id: String(cleanStoryId) }, { storyId: Number(cleanStoryId) }],
-      isDeleted: { $ne: true }, // 👈 Bổ sung điều kiện này để bỏ qua nhân vật đã xóa mềm
+      isDeleted: { $ne: true },
     });
 
-    console.log(`🔍 SỐ LƯỢNG NHÂN VẬT CHƯA XÓA CHO TRUYỆN [${cleanStoryId}]:`, characterCount);
+    console.log(`🔍 SỐ LƯỢNG NHÂN VẬT CHƯA XÓA [${cleanStoryId}]:`, characterCount);
 
     if (characterCount === 0) {
-      console.log("⛔ CHẶN ĐỨNG: Truyện không có nhân vật hợp lệ, không gọi n8n!");
       return res.status(400).json({
         success: false,
         message: "Thiếu dữ liệu: Bộ truyện hiện tại chưa có Nhân vật nào (hoặc nhân vật đã bị xóa). Vui lòng tạo ít nhất một nhân vật trước khi yêu cầu AI viết chương!",
       });
     }
 
-    // 🟢 BƯỚC 3: KIỂM TRA KẾ HOẠCH & NỘI DUNG (Từ chương 2 trở lên)
+    // =====================================================
+    // 6. LẤY WORLD
+    // =====================================================
+
+    const worldCollection = mongoDb.collection("worlds");
+
+    const world = await worldCollection.findOne({
+      storyId: cleanStoryId,
+    });
+
+    if (!world) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu dữ liệu: Bộ truyện hiện tại chưa có thông tin thế giới (World). Vui lòng tạo World trước khi sử dụng AI!",
+      });
+    }
+
+    // =====================================================
+    // 7. CHUẨN HÓA WORLD
+    // =====================================================
+
+    const worldData = {
+      storyId: world.storyId,
+      title: world.title || "",
+      description: world.description || "",
+      history: world.history || "",
+      culture: world.culture || "",
+      geography: world.geography || [],
+      powerSystems: world.powerSystems || [],
+      rules: world.rules || [],
+    };
+
+    console.log("🌍 WORLD ĐƯỢC GỬI SANG N8N:", JSON.stringify(worldData, null, 2));
+
+    // =====================================================
+    // 8. KIỂM TRA CHAPTER PLAN + CHAPTER TRƯỚC
+    // =====================================================
+
+    let currentPlan = null;
+    let previousChapter = null;
+
     if (cleanChapterNumber > 1) {
       const planCollection = mongoDb.collection("chapter_plans");
+
       const contentCollection = mongoDb.collection("chapters_content");
+
       const previousChapterNumber = cleanChapterNumber - 1;
+
+      // -------------------------------
+      // CURRENT PLAN
+      // -------------------------------
 
       const queryParams = {
         $or: [
-          { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
-          { story_id: cleanStoryId, chapter_number: cleanChapterNumber },
-          { storyId: String(cleanStoryId), chapterNumber: Number(cleanChapterNumber) },
+          {
+            storyId: cleanStoryId,
+            chapterNumber: cleanChapterNumber,
+          },
+          {
+            story_id: cleanStoryId,
+            chapter_number: cleanChapterNumber,
+          },
+          {
+            storyId: String(cleanStoryId),
+            chapterNumber: Number(cleanChapterNumber),
+          },
         ],
       };
+
+      // -------------------------------
+      // PREVIOUS CHAPTER
+      // -------------------------------
 
       const prevQueryParams = {
         $or: [
-          { storyId: cleanStoryId, chapterNumber: previousChapterNumber },
-          { story_id: cleanStoryId, chapter_number: previousChapterNumber },
-          { storyId: String(cleanStoryId), chapterNumber: Number(previousChapterNumber) },
+          {
+            storyId: cleanStoryId,
+            chapterNumber: previousChapterNumber,
+          },
+          {
+            story_id: cleanStoryId,
+            chapter_number: previousChapterNumber,
+          },
+          {
+            storyId: String(cleanStoryId),
+            chapterNumber: Number(previousChapterNumber),
+          },
         ],
       };
 
-      const currentPlan = await planCollection.findOne(queryParams);
+      currentPlan = await planCollection.findOne(queryParams);
+
       if (!currentPlan) {
         return res.status(400).json({
           success: false,
@@ -783,7 +893,8 @@ exports.aiSuggestPlot = async (req, res) => {
         });
       }
 
-      const previousChapter = await contentCollection.findOne(prevQueryParams);
+      previousChapter = await contentCollection.findOne(prevQueryParams);
+
       if (!previousChapter || !previousChapter.content || previousChapter.content.trim() === "") {
         return res.status(400).json({
           success: false,
@@ -792,29 +903,69 @@ exports.aiSuggestPlot = async (req, res) => {
       }
     }
 
-    // 🟢 BƯỚC 4: GỌI N8N (Chỉ chạy khi qua hết các chốt chặn trên)
+    // =====================================================
+    // 9. LẤY DANH SÁCH NHÂN VẬT
+    // =====================================================
+
+    const characters = await charCollection
+      .find({
+        $or: [{ storyId: cleanStoryId }, { story_id: cleanStoryId }, { storyId: String(cleanStoryId) }, { story_id: String(cleanStoryId) }],
+        isDeleted: { $ne: true },
+      })
+      .toArray();
+
+    // =====================================================
+    // 10. GỌI N8N
+    // =====================================================
+
     const N8N_PLOT_URL = "https://n8n.baostory.fun/webhook/suggest_chaptercontent";
+
     const payload = {
       storyId: cleanStoryId,
       story_id: cleanStoryId,
+
       chapterNumber: cleanChapterNumber,
       chapter_number: cleanChapterNumber,
+
       prompt: prompt || "",
+
       currentContent: currentContent || "",
+
       current_content: currentContent || "",
+
       userId: Number(userId),
       user_id: Number(userId),
+
+      // ⭐ WORLD
+      world: worldData,
+
+      // ⭐ CHARACTERS
+      characters: characters,
+
+      // ⭐ CHAPTER PLAN
+      currentPlan: currentPlan || null,
+
+      // ⭐ CHAPTER TRƯỚC
+      previousChapter: previousChapter || null,
     };
 
-    console.log("🔥 ĐÃ QUA KIỂM TRA, BẮT ĐẦU GỬI SANG N8N PAYLOAD:", JSON.stringify(payload, null, 2));
+    console.log("🔥 ĐÃ QUA TOÀN BỘ KIỂM TRA.");
+
+    console.log("🔥 PAYLOAD GỬI N8N:", JSON.stringify(payload, null, 2));
 
     const response = await axios.post(N8N_PLOT_URL, payload, {
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       timeout: 120000,
       validateStatus: () => true,
     });
 
     console.log("🔥 N8N RESPONSE STATUS:", response.status);
+
+    // =====================================================
+    // 11. KIỂM TRA RESPONSE N8N
+    // =====================================================
 
     if (response.status < 200 || response.status >= 300) {
       return res.status(502).json({
@@ -824,15 +975,30 @@ exports.aiSuggestPlot = async (req, res) => {
       });
     }
 
-    const aiContent = response.data.content || response.data.suggestion || response.data.data?.content || response.data.data || response.data || "";
+    // =====================================================
+    // 12. LẤY NỘI DUNG AI
+    // =====================================================
+
+    const aiContent = response.data?.content || response.data?.suggestion || response.data?.data?.content || response.data?.data || response.data || "";
+
+    // =====================================================
+    // 13. RESPONSE VỀ FRONTEND
+    // =====================================================
 
     return res.status(200).json({
       success: true,
       message: "AI đã tạo gợi ý thành công.",
-      data: { content: aiContent },
+      data: {
+        content: aiContent,
+      },
     });
   } catch (error) {
     console.error("❌ Lỗi AI Plot Suggestion:", error);
-    return res.status(500).json({ success: false, message: "Lỗi hệ thống khi gọi AI gợi ý nội dung.", error: error.message });
+
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi hệ thống khi gọi AI gợi ý nội dung.",
+      error: error.message,
+    });
   }
 };

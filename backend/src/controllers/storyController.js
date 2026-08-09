@@ -232,7 +232,6 @@ exports.getStoryDetails = async (req, res) => {
  */
 exports.getStories = async (req, res) => {
   try {
-    // Lấy ID từ token (authMiddleware đã giải mã và gán vào req.user)
     const user_id = req.user?.id;
     if (!user_id) {
       return res.status(401).json({
@@ -241,8 +240,9 @@ exports.getStories = async (req, res) => {
       });
     }
 
+    // 🟢 ĐÃ BỔ SUNG original_story_id VÀO CÂU LỆNH SELECT
     const [rows] = await db.query(
-      `SELECT id, user_id, title, description, cover_image, status
+      `SELECT id, user_id, title, description, cover_image, status, original_story_id
        FROM stories
        WHERE user_id = ? AND deleted_at IS NULL
        ORDER BY id DESC`,

@@ -938,13 +938,23 @@ exports.suggestInitialChapterPlans = async (req, res) => {
     }
 
     // ============================================================
-    // 8. CHUẨN HÓA DỮ LIỆU TRẢ VỀ TỪ N8N
+    // 8. CHUẨN HÓA DỮ LIỆU TRẢ VỀ TỪ N8N (Đã xử lý đa tầng mảng/object)
     // ============================================================
 
     let rawData = n8nResponse.data;
 
-    if (rawData?.data) {
-      rawData = rawData.data;
+    // Xử lý bóc tách chuỗi JSON thô nếu có
+    if (typeof rawData === "string") {
+      try {
+        rawData = JSON.parse(rawData.trim());
+      } catch (e) {}
+    }
+
+    // Lột các lớp bọc .data hoặc .json
+    if (rawData && typeof rawData === "object") {
+      if (rawData.data !== undefined) rawData = rawData.data;
+      if (rawData.json !== undefined) rawData = rawData.json;
+      if (rawData.data !== undefined) rawData = rawData.data;
     }
 
     let plansArray = [];
@@ -952,7 +962,8 @@ exports.suggestInitialChapterPlans = async (req, res) => {
     if (Array.isArray(rawData)) {
       plansArray = rawData;
     } else if (rawData && typeof rawData === "object") {
-      plansArray = rawData.chapterPlans || rawData.plans || rawData.chapters || Object.values(rawData).find((val) => Array.isArray(val)) || [];
+      // Tìm mảng bên trong object nếu n8n trả về dạng { chapterPlans: [...] } hoặc { data: [...] }
+      plansArray = rawData.chapterPlans || rawData.plans || rawData.chapters || rawData.result || Object.values(rawData).find((val) => Array.isArray(val)) || [];
     }
 
     if (!Array.isArray(plansArray) || plansArray.length === 0) {
@@ -968,33 +979,30 @@ exports.suggestInitialChapterPlans = async (req, res) => {
     // ============================================================
 
     const planCollection = mongoDb.collection("chapter_plans");
-
     const contentCollection = mongoDb.collection("chapters_content");
 
     const processedPlans = [];
 
     // ============================================================
-    // 10. DUYỆT TỪNG KẾ HOẠCH
+    // 10. DUYỆT TỪNG KẾ HOẠCH (Đã chuẩn hóa bóc tách sâu item.chapterPlan)
     // ============================================================
 
     for (const item of plansArray) {
-      const chapterPlan = item.chapterPlan || item;
+      // 🌟 Lột lớp bọc chapterPlan nếu item có dạng { chapterPlan: { ... } }
+      const chapterPlan = item?.chapterPlan || item?.json?.chapterPlan || item;
 
       const chapterNumber = Number(chapterPlan.chapterNumber || chapterPlan.chapter_number);
 
       if (!chapterNumber || isNaN(chapterNumber)) {
-        continue;
+        console.warn("⚠️ Bỏ qua phần tử do không tìm thấy chapterNumber hợp lệ:", item);
+        continue; // Bỏ qua nếu item rỗng hoặc không có số chương
       }
 
       const title = chapterPlan.title || `Chương ${chapterNumber}`;
-
       const purpose = chapterPlan.purpose || "";
-
       const conflict = chapterPlan.conflict || "";
-
       const endingHook = chapterPlan.endingHook || "";
-
-      const summary = chapterPlan.summary || "";
+      const summary = chapterPlan.summary || chapterPlan.background || "";
 
       // ========================================================
       // 10.1 UPSERT CHAPTER PLAN
@@ -1011,7 +1019,6 @@ exports.suggestInitialChapterPlans = async (req, res) => {
             chapterNumber: chapterNumber,
             createdAt: new Date(),
           },
-
           $set: {
             title,
             summary,
@@ -1044,7 +1051,7 @@ exports.suggestInitialChapterPlans = async (req, res) => {
         chapterId = existingChapter._id.toString();
       } else {
         // ======================================================
-        // 10.3 TẠO CHƯƠNG RỖNG
+        // 10.3 TẠO CHƯƠNG RỖNG (Đảm bảo chạy vào đây khi chưa có)
         // ======================================================
 
         const newChapterDoc = {
@@ -1058,7 +1065,6 @@ exports.suggestInitialChapterPlans = async (req, res) => {
         };
 
         const insertResult = await contentCollection.insertOne(newChapterDoc);
-
         chapterId = insertResult.insertedId.toString();
       }
 
@@ -1068,21 +1074,13 @@ exports.suggestInitialChapterPlans = async (req, res) => {
 
       processedPlans.push({
         planId: savedPlan._id ? savedPlan._id.toString() : null,
-
         chapterId,
-
         storyId: cleanStoryId,
-
         chapterNumber,
-
         title,
-
         summary,
-
         purpose,
-
         conflict,
-
         endingHook,
       });
     }
@@ -1093,9 +1091,7 @@ exports.suggestInitialChapterPlans = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-
       message: "AI đã tạo thành công 5 kế hoạch chương đầu tiên và khởi tạo các chương rỗng tương ứng.",
-
       data: processedPlans,
     });
   } catch (error) {

@@ -4,7 +4,7 @@ const { getMongoDb } = require("../config/mongo"); // Thư viện kết nối Mo
 const n8nService = require("../services/n8nService");
 const axios = require("axios");
 // =========================================================================
-// 1. KHỞI TẠO CHƯƠNG MỚI (TỰ ĐỘNG TẠO KÈM CHAPTER_PLANS)
+// 1. KHỞI TẠO HOẶC CẬP NHẬT CHƯƠNG MỚI (UPSERT MONGODB)
 // =========================================================================
 exports.createChapter = async (req, res) => {
   try {
@@ -49,60 +49,62 @@ exports.createChapter = async (req, res) => {
     }
 
     const collection = mongoDb.collection("chapters_content");
-    const planCollection = mongoDb.collection("chapter_plans"); // Collection kế hoạch chương
+    const planCollection = mongoDb.collection("chapter_plans");
 
-    // Kiểm tra trùng chương
-    const duplicateChapter = await collection.findOne({
+    // 🟢 Dùng updateOne với upsert: true để tự động tạo mới nếu chưa có, hoặc cập nhật nếu đã tồn tại
+    const chapterFilter = {
       $or: [
         { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
         { story_id: cleanStoryId, chapter_number: cleanChapterNumber },
       ],
-    });
-
-    if (duplicateChapter !== null) {
-      return res.status(400).json({
-        success: false,
-        message: `Số chương ${cleanChapterNumber} đã tồn tại trong bộ truyện này.`,
-      });
-    }
-
-    // 1. Tạo bản ghi Chương mới
-    const newChapter = {
-      storyId: cleanStoryId,
-      chapterNumber: cleanChapterNumber,
-      title: title.trim(),
-      content: "",
-      status: "DRAFT",
-      wordCount: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
     };
 
-    const result = await collection.insertOne(newChapter);
-    const insertedChapterId = result.insertedId.toString();
+    const chapterUpdateResult = await collection.findOneAndUpdate(
+      chapterFilter,
+      {
+        $setOnInsert: {
+          storyId: cleanStoryId,
+          chapterNumber: cleanChapterNumber,
+          content: "",
+          status: "DRAFT",
+          wordCount: 0,
+          createdAt: new Date(),
+        },
+        $set: {
+          title: title.trim(),
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true, returnDocument: "after" },
+    );
 
-    // 2. TỰ ĐỘNG KHỞI TẠO BẢN GHI TRONG `chapter_plans` MẶC ĐỊNH
+    const insertedOrUpdatedChapter = chapterUpdateResult.value || chapterUpdateResult;
+    const chapterIdStr = insertedOrUpdatedChapter._id ? insertedOrUpdatedChapter._id.toString() : "";
+
+    // 2. TỰ ĐỘNG KHỞI TẠO HOẶC CẬP NHẬT BẢN GHI TRONG `chapter_plans`
     await planCollection.updateOne(
       { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
       {
         $setOnInsert: {
           storyId: cleanStoryId,
           chapterNumber: cleanChapterNumber,
-          versionName: title.trim(), // Lấy luôn tiêu đề làm versionName mặc định
-          summary: "", // Giá trị mặc định trống hoặc null
+          summary: "",
           createdAt: new Date(),
+        },
+        $set: {
+          versionName: title.trim(),
           updatedAt: new Date(),
         },
       },
       { upsert: true },
     );
 
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: "Create chapter and plan success",
-      chapterId: insertedChapterId,
+      message: "Create or update chapter and plan success",
+      chapterId: chapterIdStr,
       data: {
-        id: insertedChapterId,
+        id: chapterIdStr,
         storyId: cleanStoryId,
         chapterNumber: cleanChapterNumber,
         title: title.trim(),

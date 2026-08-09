@@ -427,23 +427,32 @@ exports.suggestChapterPlan = async (req, res) => {
     try {
       const [existingChapter] = await db.query(`SELECT id FROM chapters_content WHERE story_id = ? AND chapter_number = ? LIMIT 1`, [cleanStoryId, generatedChapterNumber]);
 
+      const contentCollection = mongoDb.collection("chapters_content");
+
       if (existingChapter && existingChapter.length > 0) {
         chapterId = existingChapter[0].id;
+
+        // 🟢 Đảm bảo bên Mongo cũng đồng bộ cập nhật/tồn tại mà không sợ lỗi duplicate
+        await contentCollection.updateOne({ storyId: cleanStoryId, chapterNumber: generatedChapterNumber }, { $setOnInsert: { title: generatedTitle, content: "", status: "DRAFT", createdAt: new Date() }, $set: { updatedAt: new Date() } }, { upsert: true });
       } else {
         const [chapterInsert] = await db.query(`INSERT INTO chapters_content (story_id, chapter_number, title, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())`, [cleanStoryId, generatedChapterNumber, generatedTitle]);
 
         chapterId = chapterInsert.insertId;
 
-        const contentCollection = mongoDb.collection("chapters_content");
-        await contentCollection.insertOne({
-          storyId: cleanStoryId,
-          chapterNumber: generatedChapterNumber,
-          title: generatedTitle,
-          content: "",
-          status: "DRAFT",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
+        // Dùng updateOne với upsert: true thay cho insertOne để tránh văng lỗi duplicate key
+        await contentCollection.updateOne(
+          { storyId: cleanStoryId, chapterNumber: generatedChapterNumber },
+          {
+            $setOnInsert: {
+              title: generatedTitle,
+              content: "",
+              status: "DRAFT",
+              createdAt: new Date(),
+            },
+            $set: { updatedAt: new Date() },
+          },
+          { upsert: true },
+        );
 
         chapterCreated = true;
       }
@@ -451,7 +460,7 @@ exports.suggestChapterPlan = async (req, res) => {
       console.error("❌ Lỗi tạo Chapter:", chapterError);
       return res.status(500).json({
         success: false,
-        message: "Đã tạo kế hoạch chương nhưng không thể tạo chương rỗng.",
+        message: "Đã tạo kế hoạch chương nhưng không thể khởi tạo nội dung chương.",
         error: chapterError.message,
       });
     }

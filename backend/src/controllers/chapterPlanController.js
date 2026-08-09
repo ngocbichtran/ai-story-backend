@@ -54,6 +54,9 @@ exports.getChapterPlanDetail = async (req, res) => {
         title: planData.title || "",
         versionName: planData.versionName || "",
         summary: planData.summary || "",
+        purpose: planData.purpose || "",
+        conflict: planData.conflict || "",
+        endingHook: planData.endingHook || "",
         createdAt: planData.createdAt,
         updatedAt: planData.updatedAt,
       },
@@ -268,7 +271,7 @@ exports.deleteChapterPlan = async (req, res) => {
 };
 
 // =========================================================================
-// HÀM CONTROLLER GỌI N8N GỢI Ý KẾ HOẠCH CHƯƠNG KẾ TIẾP + TẠO CHƯƠNG RỖNG
+// HÀM CONTROLLER GỌI N8N GỢI Ý KẾ HOẠCH CHƯƠNG KẾ TIẾP + TẠO CHƯƠNG RỖNG (MONGODB)
 // =========================================================================
 exports.suggestChapterPlan = async (req, res) => {
   try {
@@ -291,13 +294,13 @@ exports.suggestChapterPlan = async (req, res) => {
       });
     }
 
-    // Kiểm tra story tồn tại trong MySQL (Vẫn giữ kiểm tra này để đảm bảo tính toàn vẹn)
+    // Kiểm tra story tồn tại trong MySQL
     const [storyCheck] = await db.query("SELECT id FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
     if (!storyCheck || storyCheck.length === 0) {
       return res.status(404).json({ success: false, message: "Bộ truyện không tồn tại." });
     }
 
-    // Gọi N8N
+    // Gọi N8N Webhook
     const n8nWebhook = "https://n8n.baostory.fun/webhook/suggest_1chapterplan_next";
     let n8nResponse;
     try {
@@ -331,6 +334,9 @@ exports.suggestChapterPlan = async (req, res) => {
 
     const generatedChapterNumber = Number(chapterPlan.chapterNumber) || cleanChapterNumber;
     const generatedTitle = chapterPlan.title || `Chương ${generatedChapterNumber}`;
+    const generatedPurpose = chapterPlan.purpose || "";
+    const generatedConflict = chapterPlan.conflict || "";
+    const generatedEndingHook = chapterPlan.endingHook || "";
 
     const mongoDb = getMongoDb();
     if (!mongoDb) return res.status(500).json({ success: false, message: "Mất kết nối MongoDB." });
@@ -338,23 +344,29 @@ exports.suggestChapterPlan = async (req, res) => {
     const planCollection = mongoDb.collection("chapter_plans");
     const contentCollection = mongoDb.collection("chapters_content");
 
-    // 1. UPSERT Kế hoạch chương (MongoDB)
-    await planCollection.updateOne(
+    // 1. UPSERT Kế hoạch chương (Lưu giữ nguyên các trường cấu trúc chuẩn)
+    const planUpdateResult = await planCollection.findOneAndUpdate(
       { storyId: cleanStoryId, chapterNumber: generatedChapterNumber },
       {
+        $setOnInsert: {
+          storyId: cleanStoryId,
+          chapterNumber: generatedChapterNumber,
+          createdAt: new Date(),
+        },
         $set: {
           title: generatedTitle,
-          purpose: chapterPlan.purpose || "",
-          conflict: chapterPlan.conflict || "",
-          endingHook: chapterPlan.endingHook || "",
+          purpose: generatedPurpose,
+          conflict: generatedConflict,
+          endingHook: generatedEndingHook,
           updatedAt: new Date(),
         },
-        $setOnInsert: { createdAt: new Date() },
       },
-      { upsert: true },
+      { upsert: true, returnDocument: "after" },
     );
 
-    // 2. UPSERT Chương rỗng (MongoDB - Thay thế hoàn toàn cho MySQL chapters_content)
+    const savedPlan = planUpdateResult.value || planUpdateResult;
+
+    // 2. UPSERT Chương rỗng (MongoDB thuần túy, thay thế hoàn toàn MySQL chapters_content)
     const chapterUpdateResult = await contentCollection.findOneAndUpdate(
       { storyId: cleanStoryId, chapterNumber: generatedChapterNumber },
       {
@@ -379,11 +391,14 @@ exports.suggestChapterPlan = async (req, res) => {
       success: true,
       message: "AI đã tạo kế hoạch chương và khởi tạo chương thành công.",
       data: {
-        planId: null, // Có thể lấy từ planCollection nếu cần
+        planId: savedPlan._id ? savedPlan._id.toString() : null,
         chapterId: savedChapter._id ? savedChapter._id.toString() : null,
         storyId: cleanStoryId,
         chapterNumber: generatedChapterNumber,
         title: generatedTitle,
+        purpose: generatedPurpose,
+        conflict: generatedConflict,
+        endingHook: generatedEndingHook,
         content: "",
       },
     });

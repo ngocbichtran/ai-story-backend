@@ -271,7 +271,7 @@ exports.deleteChapterPlan = async (req, res) => {
 };
 
 // =========================================================================
-// HÀM CONTROLLER GỌI N8N GỢI Ý KẾ HOẠCH CHƯƠNG KẾ TIẾP + TẠO CHƯƠNG RỖNG (MONGODB)
+// HÀM CONTROLLER GỌI N8N GỢI Ý KẾ HOẠCH CHƯƠNG KẾ TIẾP (CẤM SỬA ĐÈ NẾU ĐÃ TỒN TẠI)
 // =========================================================================
 exports.suggestChapterPlan = async (req, res) => {
   try {
@@ -300,7 +300,31 @@ exports.suggestChapterPlan = async (req, res) => {
       return res.status(404).json({ success: false, message: "Bộ truyện không tồn tại." });
     }
 
-    // Gọi N8N Webhook
+    const mongoDb = getMongoDb();
+    if (!mongoDb) return res.status(500).json({ success: false, message: "Mất kết nối MongoDB." });
+
+    const planCollection = mongoDb.collection("chapter_plans");
+    const contentCollection = mongoDb.collection("chapters_content");
+
+    // 🛑 1. KIỂM TRA XEM CHƯƠNG HOẶC KẾ HOẠCH ĐÃ TỒN TẠI CHƯA -> NẾU CÓ THÌ CẤM SỬA ĐÈ
+    const existingPlan = await planCollection.findOne({
+      storyId: cleanStoryId,
+      chapterNumber: cleanChapterNumber,
+    });
+
+    const existingChapter = await contentCollection.findOne({
+      storyId: cleanStoryId,
+      chapterNumber: cleanChapterNumber,
+    });
+
+    if (existingPlan || existingChapter) {
+      return res.status(400).json({
+        success: false,
+        message: `Chương ${cleanChapterNumber} đã tồn tại trên hệ thống. Cấm sửa đè dữ liệu!`,
+      });
+    }
+
+    // Gọi N8N Webhook để lấy gợi ý mới
     const n8nWebhook = "https://n8n.baostory.fun/webhook/suggest_1chapterplan_next";
     let n8nResponse;
     try {
@@ -338,61 +362,39 @@ exports.suggestChapterPlan = async (req, res) => {
     const generatedConflict = chapterPlan.conflict || "";
     const generatedEndingHook = chapterPlan.endingHook || "";
 
-    const mongoDb = getMongoDb();
-    if (!mongoDb) return res.status(500).json({ success: false, message: "Mất kết nối MongoDB." });
+    // 2. INSERT MỚI Kế hoạch chương vào MongoDB (Không dùng upsert nữa)
+    const newPlanDoc = {
+      storyId: cleanStoryId,
+      chapterNumber: generatedChapterNumber,
+      title: generatedTitle,
+      purpose: generatedPurpose,
+      conflict: generatedConflict,
+      endingHook: generatedEndingHook,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
 
-    const planCollection = mongoDb.collection("chapter_plans");
-    const contentCollection = mongoDb.collection("chapters_content");
+    const planInsertResult = await planCollection.insertOne(newPlanDoc);
 
-    // 1. UPSERT Kế hoạch chương (Lưu giữ nguyên các trường cấu trúc chuẩn)
-    const planUpdateResult = await planCollection.findOneAndUpdate(
-      { storyId: cleanStoryId, chapterNumber: generatedChapterNumber },
-      {
-        $setOnInsert: {
-          storyId: cleanStoryId,
-          chapterNumber: generatedChapterNumber,
-          createdAt: new Date(),
-        },
-        $set: {
-          title: generatedTitle,
-          purpose: generatedPurpose,
-          conflict: generatedConflict,
-          endingHook: generatedEndingHook,
-          updatedAt: new Date(),
-        },
-      },
-      { upsert: true, returnDocument: "after" },
-    );
+    // 3. INSERT MỚI Chương rỗng vào MongoDB
+    const newChapterDoc = {
+      storyId: cleanStoryId,
+      chapterNumber: generatedChapterNumber,
+      title: generatedTitle,
+      content: "",
+      status: "DRAFT",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
 
-    const savedPlan = planUpdateResult.value || planUpdateResult;
-
-    // 2. UPSERT Chương rỗng (MongoDB thuần túy, thay thế hoàn toàn MySQL chapters_content)
-    const chapterUpdateResult = await contentCollection.findOneAndUpdate(
-      { storyId: cleanStoryId, chapterNumber: generatedChapterNumber },
-      {
-        $setOnInsert: {
-          storyId: cleanStoryId,
-          chapterNumber: generatedChapterNumber,
-          content: "",
-          status: "DRAFT",
-          createdAt: new Date(),
-        },
-        $set: {
-          title: generatedTitle,
-          updatedAt: new Date(),
-        },
-      },
-      { upsert: true, returnDocument: "after" },
-    );
-
-    const savedChapter = chapterUpdateResult.value || chapterUpdateResult;
+    const chapterInsertResult = await contentCollection.insertOne(newChapterDoc);
 
     return res.status(200).json({
       success: true,
-      message: "AI đã tạo kế hoạch chương và khởi tạo chương thành công.",
+      message: "AI đã tạo kế hoạch chương và khởi tạo chương mới thành công.",
       data: {
-        planId: savedPlan._id ? savedPlan._id.toString() : null,
-        chapterId: savedChapter._id ? savedChapter._id.toString() : null,
+        planId: planInsertResult.insertedId.toString(),
+        chapterId: chapterInsertResult.insertedId.toString(),
         storyId: cleanStoryId,
         chapterNumber: generatedChapterNumber,
         title: generatedTitle,

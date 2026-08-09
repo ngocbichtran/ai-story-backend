@@ -30,7 +30,9 @@ const saveDerivativeChapterPlans = async (storyId, chapterPlans) => {
   return true;
 };
 
-// 3. Hàm hỗ trợ: Lưu mảng nhiều nhân vật phái sinh vào MongoDB
+// =========================================================================
+// HÀM HỖ TRỢ: LƯU MẢNG NHÂN VẬT PHÁI SINH VÀO MONGODB
+// =========================================================================
 const saveDerivativeCharacters = async (storyId, characters, userId) => {
   if (!characters || !Array.isArray(characters) || characters.length === 0) {
     return true;
@@ -43,6 +45,8 @@ const saveDerivativeCharacters = async (storyId, characters, userId) => {
 
   const charactersToInsert = characters.map((char) => ({
     storyId: Number(storyId),
+    // 🌟 Lưu lại ID của nhân vật gốc để truy xuất ngược khi cần
+    originalCharacterId: char.originalCharacterId || char.id || char._id || null,
     name: char.name || "Nhân vật mới",
     role: char.role || "Nhân vật phụ",
     appearance: char.appearance || "",

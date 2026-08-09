@@ -3,6 +3,7 @@ const db = require("../config/db");
 const { getMongoDb } = require("../config/mongo"); // Thư viện kết nối MongoDB Atlas đám mây
 const n8nService = require("../services/n8nService");
 const axios = require("axios");
+
 // =========================================================================
 // 1. KHỞI TẠO HOẶC CẬP NHẬT CHƯƠNG MỚI (UPSERT MONGODB)
 // =========================================================================
@@ -51,7 +52,7 @@ exports.createChapter = async (req, res) => {
     const collection = mongoDb.collection("chapters_content");
     const planCollection = mongoDb.collection("chapter_plans");
 
-    // 🟢 Dùng updateOne với upsert: true để tự động tạo mới nếu chưa có, hoặc cập nhật nếu đã tồn tại
+    // Dùng updateOne với upsert: true để tự động tạo mới nếu chưa có, hoặc cập nhật nếu đã tồn tại
     const chapterFilter = {
       $or: [
         { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
@@ -81,7 +82,7 @@ exports.createChapter = async (req, res) => {
     const insertedOrUpdatedChapter = chapterUpdateResult.value || chapterUpdateResult;
     const chapterIdStr = insertedOrUpdatedChapter._id ? insertedOrUpdatedChapter._id.toString() : "";
 
-    // 2. TỰ ĐỘNG KHỞI TẠO HOẶC CẬP NHẬT BẢN GHI TRONG `chapter_plans`
+    // Tự động khởi tạo hoặc cập nhật bản ghi trong `chapter_plans`
     await planCollection.updateOne(
       { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
       {
@@ -307,7 +308,7 @@ exports.getChaptersByStory = async (req, res) => {
 };
 
 // =========================================================================
-// 5. SỬA NỘI DUNG CHƯƠNG THỦ CÔNG (ĐẶC TẢ 025_F1)(Thêm logic giới hạn tối đa 10 phiên bản)
+// 5. SỬA NỘI DUNG CHƯƠNG THỦ CÔNG (Giới hạn tối đa 10 phiên bản)
 // =========================================================================
 exports.updateChapterContent = async (req, res) => {
   try {
@@ -347,7 +348,7 @@ exports.updateChapterContent = async (req, res) => {
       ...(content !== undefined && { content: content }),
     };
 
-    // 1. Cập nhật bản ghi hiện tại
+    // Cập nhật bản ghi hiện tại
     await exports.saveUpdatedChapterContentMongo({
       storyId: cleanStoryId,
       chapterNumber: cleanChapterNumber,
@@ -355,10 +356,9 @@ exports.updateChapterContent = async (req, res) => {
       wordCount: wordCount,
     });
 
-    // 2. QUẢN LÝ LỊCH SỬ PHIÊN BẢN (GIỚI HẠN TỐI ĐA 10 BẢN GHI)
+    // Quản lý lịch sử phiên bản (giới hạn tối đa 10 bản ghi)
     const historyCollection = mongoDb.collection("chapter_versions");
 
-    // Đếm số lượng phiên bản hiện có của chương này
     const filterQuery = {
       $or: [
         { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
@@ -368,7 +368,6 @@ exports.updateChapterContent = async (req, res) => {
 
     const currentCount = await historyCollection.countDocuments(filterQuery);
 
-    // Nếu đã đủ 10 bản ghi trở lên ➔ Xóa bản ghi CŨ NHẤT trước khi thêm mới
     if (currentCount >= 10) {
       const oldestVersion = await historyCollection.findOne(filterQuery, { sort: { createdAt: 1 } });
       if (oldestVersion) {
@@ -376,7 +375,6 @@ exports.updateChapterContent = async (req, res) => {
       }
     }
 
-    // Chèn phiên bản mới nhất vào Database
     await historyCollection.insertOne({
       storyId: cleanStoryId,
       chapterNumber: cleanChapterNumber,
@@ -402,59 +400,9 @@ exports.updateChapterContent = async (req, res) => {
     return res.status(500).json({ success: false, message: "Lỗi hệ thống khi cập nhật." });
   }
 };
+
 // =========================================================================
-// 11. KHÔI PHỤC PHIÊN BẢN CŨ (Tùy chọn bổ sung nếu muốn có endpoint riêng)
-// =========================================================================
-exports.restoreChapterVersion = async (req, res) => {
-  try {
-    const { storyId, chapterNumber } = req.params;
-    const { content } = req.body;
-    const userId = req.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({ success: false, message: "Phiên đăng nhập đã hết hạn." });
-    }
-
-    if (content === undefined) {
-      return res.status(400).json({ success: false, message: "Thiếu nội dung cần khôi phục." });
-    }
-
-    const cleanStoryId = Number(storyId);
-    const cleanChapterNumber = Number(chapterNumber);
-
-    // Tính toán lại số từ của bản khôi phục
-    const trimmedContent = content.trim();
-    const wordCount = trimmedContent === "" ? 0 : trimmedContent.split(/\s+/).filter(Boolean).length;
-
-    // Cập nhật đè nội dung khôi phục lên bảng chính chapters_content
-    const modifiedCount = await exports.saveAutosaveContentMongo({
-      storyId: cleanStoryId,
-      chapterNumber: cleanChapterNumber,
-      content: content,
-      wordCount: wordCount,
-    });
-
-    if (modifiedCount === 0) {
-      return res.status(404).json({ success: false, message: "Không tìm thấy chương để khôi phục." });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Khôi phục phiên bản thành công.",
-      data: {
-        storyId: cleanStoryId,
-        chapterNumber: cleanChapterNumber,
-        wordCount: wordCount,
-        content: content,
-      },
-    });
-  } catch (error) {
-    console.error("Lỗi tại hàm restoreChapterVersion:", error.message);
-    return res.status(500).json({ success: false, message: "Lỗi hệ thống khi khôi phục phiên bản." });
-  }
-};
-// =========================================================================
-// 6. REPOSITORY CẬP NHẬT MONGODB (ĐẶC TẢ 025_F2)
+// 6. REPOSITORY CẬP NHẬT MONGODB
 // =========================================================================
 exports.saveUpdatedChapterContentMongo = async ({ storyId, chapterNumber, updateData, wordCount }) => {
   const mongoDb = getMongoDb();
@@ -470,7 +418,6 @@ exports.saveUpdatedChapterContentMongo = async ({ storyId, chapterNumber, update
     updatedAt: new Date(),
   };
 
-  // Cập nhật dựa trên điều kiện linh hoạt chuẩn camelCase
   const result = await collection.updateOne(
     {
       $or: [
@@ -485,12 +432,48 @@ exports.saveUpdatedChapterContentMongo = async ({ storyId, chapterNumber, update
 
   return result.modifiedCount || result.matchedCount;
 };
+
 // =========================================================================
-// 8. AUTO SAVE NỘI DUNG CHƯƠNG (Controller - Đặc tả 026_F1)
+// 7. N8N / SPELL CHECK
+// =========================================================================
+exports.spellCheck = async (req, res) => {
+  try {
+    const { storyId, chapterNumber } = req.body;
+
+    if (!storyId || !chapterNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu storyId hoặc chapterNumber",
+      });
+    }
+
+    const payload = {
+      story_id: Number(storyId),
+      chapter_number: Number(chapterNumber),
+    };
+
+    const result = await n8nService.triggerN8nWorkflow(process.env.N8N_EDIT_ART_URL, payload);
+
+    return res.json({
+      success: true,
+      message: "Sửa chính tả thành công.",
+      data: result,
+    });
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi AI",
+    });
+  }
+};
+
+// =========================================================================
+// 8. AUTO SAVE NỘI DUNG CHƯƠNG
 // =========================================================================
 exports.autoSaveChapterContent = async (req, res) => {
   try {
-    // Bước 1: Trích xuất parameters từ URL và body request
     const { storyId, chapterNumber } = req.params;
     const { content } = req.body;
     const userId = req.user?.id;
@@ -512,11 +495,9 @@ exports.autoSaveChapterContent = async (req, res) => {
     const cleanStoryId = Number(storyId);
     const cleanChapterNumber = Number(chapterNumber);
 
-    // Bước 2: Tính toán lại số lượng từ dựa trên đoạn nội dung văn bản vừa nhận
     const trimmedContent = content.trim();
     const wordCount = trimmedContent === "" ? 0 : trimmedContent.split(/\s+/).filter(Boolean).length;
 
-    // Bước 3: Gọi hàm tương tác xuống tầng Repository (saveAutosaveContentMongo)
     const modifiedCount = await exports.saveAutosaveContentMongo({
       storyId: cleanStoryId,
       chapterNumber: cleanChapterNumber,
@@ -531,7 +512,6 @@ exports.autoSaveChapterContent = async (req, res) => {
       });
     }
 
-    // Bước 4: Trả về đối tượng JSON kèm mốc thời gian (timestamp) lưu nháp cho Client
     const savedAt = new Date().toLocaleTimeString("vi-VN", {
       hour: "2-digit",
       minute: "2-digit",
@@ -559,7 +539,7 @@ exports.autoSaveChapterContent = async (req, res) => {
 };
 
 // =========================================================================
-// 9. REPOSITORY CẬP NHẬT AUTOSAVE VÀO MONGODB (Repository - Đặc tả 026_F2)
+// 9. REPOSITORY CẬP NHẬT AUTOSAVE VÀO MONGODB
 // =========================================================================
 exports.saveAutosaveContentMongo = async ({ storyId, chapterNumber, content, wordCount }) => {
   const mongoDb = getMongoDb();
@@ -569,7 +549,6 @@ exports.saveAutosaveContentMongo = async ({ storyId, chapterNumber, content, wor
 
   const collection = mongoDb.collection("chapters_content");
 
-  // Cập nhật nhanh nội dung nháp văn bản, wordCount và mốc thời gian dựa theo storyId và chapterNumber
   const result = await collection.updateOne(
     {
       $or: [
@@ -611,7 +590,6 @@ exports.getChapterHistory = async (req, res) => {
     const cleanStoryId = Number(storyId);
     const cleanChapterNumber = Number(chapterNumber);
 
-    // 1. LẤY BẢN NHÁP HIỆN TẠI TỪ BẢNG CHÍNH (chapters_content)
     const contentCollection = mongoDb.collection("chapters_content");
     const currentChapterDoc = await contentCollection.findOne({
       $or: [
@@ -620,7 +598,6 @@ exports.getChapterHistory = async (req, res) => {
       ],
     });
 
-    // 2. LẤY DANH SÁCH CÁC SNAPSHOT LƯU THỦ CÔNG (chapter_versions)
     const historyCollection = mongoDb.collection("chapter_versions");
     const history = await historyCollection
       .find({
@@ -632,33 +609,30 @@ exports.getChapterHistory = async (req, res) => {
       .sort({ createdAt: -1 })
       .toArray();
 
-    // Format danh sách các bản lưu thủ công
     const formattedHistory = history.map((ver, index) => ({
       id: ver._id.toString(),
       versionName: ver.versionName || `Bản lưu ${history.length - index}`,
       content: ver.content || "",
       wordCount: ver.wordCount || 0,
       createdAt: new Date(ver.createdAt).toLocaleString("vi-VN"),
-      isDraft: false, // Đánh dấu đây là bản snapshot thủ công
+      isDraft: false,
     }));
 
-    // 3. TẠO PHẦN TỬ "BẢN NHÁP TỰ ĐỘNG GẦN NHẤT" ĐỨNG ĐẦU MẢNG
     let draftItem = [];
     if (currentChapterDoc) {
       const draftUpdatedAt = currentChapterDoc.updatedAt || currentChapterDoc.createdAt || new Date();
       draftItem = [
         {
-          id: "autosave-latest-draft", // ID định danh riêng cho bản nháp
+          id: "autosave-latest-draft",
           versionName: "Bản nháp tự động gần nhất",
           content: currentChapterDoc.content || "",
           wordCount: currentChapterDoc.wordCount || 0,
           createdAt: new Date(draftUpdatedAt).toLocaleString("vi-VN"),
-          isDraft: true, // Đánh dấu đây là bản nháp ngầm
+          isDraft: true,
         },
       ];
     }
 
-    // Ghép bản nháp lên đầu tiên, theo sau là tối đa các bản snapshot lịch sử
     const finalResult = [...draftItem, ...formattedHistory];
 
     return res.status(200).json({
@@ -670,44 +644,59 @@ exports.getChapterHistory = async (req, res) => {
     return res.status(500).json({ success: false, message: "Lỗi hệ thống khi tải lịch sử phiên bản." });
   }
 };
-// =========================================================================
-// 7. N8N / SPELL CHECK
-// =========================================================================
-exports.spellCheck = async (req, res) => {
-  try {
-    const { storyId, chapterNumber } = req.body;
 
-    if (!storyId || !chapterNumber) {
-      return res.status(400).json({
-        success: false,
-        message: "Thiếu storyId hoặc chapterNumber",
-      });
+// =========================================================================
+// 11. KHÔI PHỤC PHIÊN BẢN CŨ
+// =========================================================================
+exports.restoreChapterVersion = async (req, res) => {
+  try {
+    const { storyId, chapterNumber } = req.params;
+    const { content } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Phiên đăng nhập đã hết hạn." });
     }
 
-    const payload = {
-      story_id: Number(storyId),
-      chapter_number: Number(chapterNumber),
-    };
+    if (content === undefined) {
+      return res.status(400).json({ success: false, message: "Thiếu nội dung cần khôi phục." });
+    }
 
-    const result = await n8nService.triggerN8nWorkflow(process.env.N8N_EDIT_ART_URL, payload);
+    const cleanStoryId = Number(storyId);
+    const cleanChapterNumber = Number(chapterNumber);
 
-    return res.json({
+    const trimmedContent = content.trim();
+    const wordCount = trimmedContent === "" ? 0 : trimmedContent.split(/\s+/).filter(Boolean).length;
+
+    const modifiedCount = await exports.saveAutosaveContentMongo({
+      storyId: cleanStoryId,
+      chapterNumber: cleanChapterNumber,
+      content: content,
+      wordCount: wordCount,
+    });
+
+    if (modifiedCount === 0) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy chương để khôi phục." });
+    }
+
+    return res.status(200).json({
       success: true,
-      message: "Sửa chính tả thành công.",
-      data: result,
+      message: "Khôi phục phiên bản thành công.",
+      data: {
+        storyId: cleanStoryId,
+        chapterNumber: cleanChapterNumber,
+        wordCount: wordCount,
+        content: content,
+      },
     });
-  } catch (err) {
-    console.error(err);
-
-    return res.status(500).json({
-      success: false,
-      message: "Lỗi AI",
-    });
+  } catch (error) {
+    console.error("Lỗi tại hàm restoreChapterVersion:", error.message);
+    return res.status(500).json({ success: false, message: "Lỗi hệ thống khi khôi phục phiên bản." });
   }
 };
 
 // =====================================================
-// AI GỢI Ý NỘI DUNG CHƯƠNG (Nối n8n)
+// 12. AI GỢI Ý NỘI DUNG CHƯƠNG (Nối n8n - Có kiểm tra chương trước & kế hoạch từ chương 2)
 // =====================================================
 exports.aiSuggestPlot = async (req, res) => {
   try {
@@ -726,18 +715,64 @@ exports.aiSuggestPlot = async (req, res) => {
       });
     }
 
+    const cleanStoryId = Number(storyId);
+    const cleanChapterNumber = Number(chapterNumber);
+
+    const mongoDb = getMongoDb();
+    if (!mongoDb) {
+      return res.status(500).json({ success: false, message: "Mất kết nối MongoDB Atlas." });
+    }
+
+    // 🟢 KIỂM TRA ĐIỀU KIỆN TỪ CHƯƠNG 2 TRỞ LÊN
+    if (cleanChapterNumber > 1) {
+      const planCollection = mongoDb.collection("chapter_plans");
+      const contentCollection = mongoDb.collection("chapters_content");
+
+      const previousChapterNumber = cleanChapterNumber - 1;
+
+      // 1. Kiểm tra xem đã có kế hoạch cho chương hiện tại hoặc chương trước chưa
+      const currentPlan = await planCollection.findOne({
+        storyId: cleanStoryId,
+        chapterNumber: cleanChapterNumber,
+      });
+
+      const previousPlan = await planCollection.findOne({
+        storyId: cleanStoryId,
+        chapterNumber: previousChapterNumber,
+      });
+
+      if (!currentPlan && !previousPlan) {
+        return res.status(400).json({
+          success: false,
+          message: `Vui lòng bổ sung kế hoạch cho chương ${cleanChapterNumber} trước khi sử dụng tính năng gợi ý từ AI!`,
+        });
+      }
+
+      // 2. Kiểm tra nội dung chương liền kề trước đó (chương N-1) có bị trống không
+      const previousChapter = await contentCollection.findOne({
+        storyId: cleanStoryId,
+        chapterNumber: previousChapterNumber,
+      });
+
+      if (!previousChapter || !previousChapter.content || previousChapter.content.trim() === "") {
+        return res.status(400).json({
+          success: false,
+          message: `Chương ${previousChapterNumber} trước đó đang trống nội dung. Vui lòng viết hoặc hoàn thiện chương trước trước khi gợi ý nội dung cho chương này!`,
+        });
+      }
+    }
+
     const N8N_PLOT_URL = "https://n8n.baostory.fun/webhook/suggest_chaptercontent";
 
     const payload = {
-      storyId: Number(storyId),
-      chapterNumber: Number(chapterNumber),
+      storyId: cleanStoryId,
+      chapterNumber: cleanChapterNumber,
       prompt: prompt || "",
       currentContent: currentContent || "",
       userId: Number(userId),
     };
 
     console.log("🔥 PAYLOAD GỬI N8N:", JSON.stringify(payload, null, 2));
-
     console.log("🔥 N8N URL:", N8N_PLOT_URL);
 
     const response = await axios.post(N8N_PLOT_URL, payload, {

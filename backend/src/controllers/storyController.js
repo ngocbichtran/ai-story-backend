@@ -228,7 +228,7 @@ exports.getStories = async (req, res) => {
           s.original_story_id,
           COUNT(c.id) AS chapter_count
        FROM stories s
-       LEFT JOIN chapter_contents c ON s.id = c.story_id AND c.deleted_at IS NULL
+       LEFT JOIN chapters_content c ON s.id = c.story_id AND c.deleted_at IS NULL
        WHERE s.user_id = ? AND s.deleted_at IS NULL
        GROUP BY s.id
        ORDER BY s.id DESC`,

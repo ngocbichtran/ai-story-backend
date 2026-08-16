@@ -204,7 +204,7 @@ exports.getStoryDetails = async (req, res) => {
 };
 
 /**
- * 1. API Lấy danh sách truyện của riêng User đang đăng nhập
+ * 1. API Lấy danh sách truyện của riêng User đang đăng nhập (kèm số chương)
  * GET /api/stories/list
  */
 exports.getStories = async (req, res) => {
@@ -218,10 +218,20 @@ exports.getStories = async (req, res) => {
     }
 
     const [rows] = await db.query(
-      `SELECT id, user_id, title, description, cover_image, status, original_story_id
-       FROM stories
-       WHERE user_id = ? AND deleted_at IS NULL
-       ORDER BY id DESC`,
+      `SELECT 
+          s.id, 
+          s.user_id, 
+          s.title, 
+          s.description, 
+          s.cover_image, 
+          s.status, 
+          s.original_story_id,
+          COUNT(c.id) AS chapter_count
+       FROM stories s
+       LEFT JOIN chapter_contents c ON s.id = c.story_id AND c.deleted_at IS NULL
+       WHERE s.user_id = ? AND s.deleted_at IS NULL
+       GROUP BY s.id
+       ORDER BY s.id DESC`,
       [user_id],
     );
 

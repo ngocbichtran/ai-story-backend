@@ -213,7 +213,7 @@ exports.getStories = async (req, res) => {
     if (!user_id) return res.status(401).json({ success: false, message: "..." });
 
     // 1. Lấy danh sách truyện từ MySQL
-    const [stories] = await db.query(`SELECT id, title, description, cover_image, status, original_story_id, FROM stories WHERE user_id = ? AND deleted_at IS NULL ORDER BY id DESC`, [user_id]);
+    const [stories] = await db.query(`SELECT id, title, description, cover_image, status, original_story_id FROM stories WHERE user_id = ? AND deleted_at IS NULL ORDER BY id DESC`, [user_id]);
 
     // 2. Lấy số lượng chương từ MongoDB
     const mongoDb = getMongoDb();

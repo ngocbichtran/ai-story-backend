@@ -210,35 +210,28 @@ exports.getStoryDetails = async (req, res) => {
 exports.getStories = async (req, res) => {
   try {
     const user_id = req.user?.id;
-    if (!user_id) {
-      return res.status(401).json({
-        success: false,
-        message: "Không tìm thấy thông tin tác giả. Vui lòng đăng nhập lại.",
-      });
-    }
+    if (!user_id) return res.status(401).json({ success: false, message: "..." });
 
-    const [rows] = await db.query(
-      `SELECT 
-          s.id, 
-          s.user_id, 
-          s.title, 
-          s.description, 
-          s.cover_image, 
-          s.status, 
-          s.original_story_id,
-          COUNT(c.id) AS chapter_count
-       FROM stories s
-       LEFT JOIN chapters_content c ON s.id = c.story_id AND c.deleted_at IS NULL
-       WHERE s.user_id = ? AND s.deleted_at IS NULL
-       GROUP BY s.id
-       ORDER BY s.id DESC`,
-      [user_id],
-    );
+    // 1. Lấy danh sách truyện từ MySQL
+    const [stories] = await db.query(`SELECT id, title, description, cover_image, status FROM stories WHERE user_id = ? AND deleted_at IS NULL ORDER BY id DESC`, [user_id]);
 
-    return res.status(200).json({ success: true, data: rows });
+    // 2. Lấy số lượng chương từ MongoDB
+    const mongoDb = getMongoDb();
+    const collection = mongoDb.collection("chapters_content");
+
+    // Đếm số chương theo từng storyId
+    const counts = await collection.aggregate([{ $match: { storyId: { $in: stories.map((s) => s.id) } } }, { $group: { _id: "$storyId", count: { $sum: 1 } } }]).toArray();
+
+    // 3. Gộp dữ liệu
+    const storiesWithCount = stories.map((s) => ({
+      ...s,
+      chapter_count: counts.find((c) => c._id === s.id)?.count || 0,
+    }));
+
+    return res.status(200).json({ success: true, data: storiesWithCount });
   } catch (error) {
-    console.error("Lỗi tại getStories theo tác giả:", error.message);
-    return res.status(500).json({ success: false, message: "Lỗi hệ thống khi lấy danh sách truyện." });
+    console.error("Lỗi:", error.message);
+    return res.status(500).json({ success: false, message: "Lỗi hệ thống." });
   }
 };
 

@@ -1,12 +1,10 @@
 const db = require("../config/db");
 
-// Kiểm tra tên thể loại đã tồn tại chưa (Chỉ kiểm tra các thể loại chưa bị xóa)
 exports.checkGenreNameExists = async (name) => {
   const [rows] = await db.query("SELECT id FROM genres WHERE name = ? AND deleted_at IS NULL LIMIT 1", [name]);
   return rows.length > 0;
 };
 
-// Lưu thể loại mới xuống Database
 exports.saveNewGenre = async (name, description, userId) => {
   const [result] = await db.query(
     `
@@ -18,7 +16,6 @@ exports.saveNewGenre = async (name, description, userId) => {
   return result.insertId;
 };
 
-// Tạo thể loại mới
 exports.createGenre = async (req, res) => {
   try {
     const { name, description } = req.body;
@@ -31,7 +28,6 @@ exports.createGenre = async (req, res) => {
       });
     }
 
-    // Kiểm tra dữ liệu đầu vào
     if (!name || name.trim() === "") {
       return res.status(400).json({
         success: false,
@@ -40,8 +36,6 @@ exports.createGenre = async (req, res) => {
     }
 
     const trimmedName = name.trim();
-
-    // Kiểm tra trùng tên
     const exists = await this.checkGenreNameExists(trimmedName);
     if (exists) {
       return res.status(400).json({
@@ -50,7 +44,6 @@ exports.createGenre = async (req, res) => {
       });
     }
 
-    // Lưu xuống database kèm theo userId
     const insertId = await this.saveNewGenre(trimmedName, description || "", userId);
 
     return res.status(201).json({
@@ -96,13 +89,12 @@ exports.getGenres = async (req, res) => {
   }
 };
 
-// XÓA MỀM THỂ LOẠI (Cập nhật cột deleted_at)
+// XÓA MỀM THỂ LOẠI
 exports.softDeleteStory = async (req, res) => {
   const userId = req.user?.id;
   const { genreId } = req.params;
 
   try {
-    // Thực hiện cập nhật mốc thời gian xóa mềm
     await db.query(
       `
       UPDATE genres 

@@ -4,7 +4,6 @@ const { ObjectId } = require("mongodb");
 
 // =========================================================================
 // HÀM REPOSITORY: saveUpdatedCharacter()
-// Đặc tả 019_F2
 // =========================================================================
 const saveUpdatedCharacter = async (characterId, updateData) => {
   const mongoDb = getMongoDb();
@@ -27,7 +26,6 @@ const saveUpdatedCharacter = async (characterId, updateData) => {
     } catch (e) {}
   }
 
-  // Chuẩn bị payload cập nhật động
   const updatePayload = {
     updatedAt: new Date(),
   };
@@ -36,7 +34,6 @@ const saveUpdatedCharacter = async (characterId, updateData) => {
     updatePayload.name = updateData.name.trim();
   }
 
-  // LOÀI
   if (updateData.species !== undefined) {
     updatePayload.species = updateData.species;
   }
@@ -101,10 +98,6 @@ const saveUpdatedCharacter = async (characterId, updateData) => {
     updatePayload.tags = updateData.tags;
   }
 
-  // Không tự động thay đổi isDeleted khi cập nhật nhân vật.
-  // Tránh trường hợp nhân vật đã xóa mềm bị khôi phục ngoài ý muốn.
-
-  // Thực thi cập nhật MongoDB
   const result = await collection.updateOne({ $or: queryConditions }, { $set: updatePayload });
 
   return result.modifiedCount;
@@ -112,7 +105,6 @@ const saveUpdatedCharacter = async (characterId, updateData) => {
 
 // =========================================================================
 // HÀM REPOSITORY NỘI BỘ: removeCharacterMongo()
-// Đặc tả 020_F2
 // =========================================================================
 const removeCharacterMongo = async (characterId) => {
   const mongoDb = getMongoDb();
@@ -137,7 +129,6 @@ const removeCharacterMongo = async (characterId) => {
     } catch (e) {}
   }
 
-  // Thực thi cập nhật xóa mềm (Soft Delete)
   const result = await collection.updateOne(
     { $or: queryConditions },
     {
@@ -154,13 +145,10 @@ const removeCharacterMongo = async (characterId) => {
 
 // =========================================================================
 // KHỞI TẠO NHÂN VẬT MỚI
-// Đặc tả 016_F1 & 016_F2
 // =========================================================================
 exports.createCharacter = async (req, res) => {
   try {
-    // Bước 1: Tiếp nhận storyId và thông tin nhân vật
     const { storyId, ...characterData } = req.body;
-
     const userId = req.user?.id;
 
     if (!userId) {
@@ -170,7 +158,6 @@ exports.createCharacter = async (req, res) => {
       });
     }
 
-    // Bước 2: Kiểm tra các trường bắt buộc
     const { name, role } = characterData;
 
     if (!storyId || !name || !name.trim() || !role || !role.trim()) {
@@ -181,8 +168,6 @@ exports.createCharacter = async (req, res) => {
     }
 
     const cleanStoryId = Number(storyId);
-
-    // Bước 3: Kiểm tra story trong MySQL
     const [storyCheck] = await db.query("SELECT COUNT(*) as count FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
 
     if (storyCheck[0].count === 0) {
@@ -203,42 +188,26 @@ exports.createCharacter = async (req, res) => {
 
     const collection = mongoDb.collection("characters");
 
-    // Bước 4: Khởi tạo document nhân vật
     const newCharacterDoc = {
       storyId: cleanStoryId,
-
       name: name.trim(),
-
-      // LOÀI
       species: characterData.species || "",
-
       gender: characterData.gender || "",
       age: characterData.age ?? 0,
-
       status: characterData.status || "alive",
-
-      // Xóa mềm
       isDeleted: false,
-
       occupation: characterData.occupation || "",
       role: role.trim(),
-
       appearance: characterData.appearance || "",
       personality: characterData.personality || "",
       background: characterData.background || "",
       goal: characterData.goal || "",
-
       ability: characterData.ability || "",
       development: characterData.development || "",
-
       currentLocation: characterData.currentLocation || "",
-
       relationship: characterData.relationship || [],
-
       avatar: characterData.avatar || "",
-
       tags: characterData.tags || [],
-
       createdBy: userId,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -246,7 +215,6 @@ exports.createCharacter = async (req, res) => {
 
     const insertResult = await collection.insertOne(newCharacterDoc);
 
-    // Bước 5: Trả về kết quả
     return res.status(201).json({
       success: true,
       message: "Khởi tạo nhân vật mới thành công",
@@ -270,7 +238,6 @@ exports.createCharacter = async (req, res) => {
 
 // =========================================================================
 // LẤY CHI TIẾT MỘT NHÂN VẬT THEO ID
-// Đặc tả 017_F1 & 017_F2
 // =========================================================================
 exports.getCharacterDetail = async (req, res) => {
   try {
@@ -326,39 +293,24 @@ exports.getCharacterDetail = async (req, res) => {
       data: {
         id: char._id.toString(),
         storyId: char.storyId,
-
         name: char.name || "",
-
-        // LOÀI
         species: char.species || "",
-
         gender: char.gender || "",
         age: char.age ?? 0,
-
         status: char.status || "alive",
-
-        // Xóa mềm
         isDeleted: char.isDeleted ?? false,
-
         occupation: char.occupation || "",
         role: char.role || "",
-
         appearance: char.appearance || "",
         personality: char.personality || "",
         background: char.background || "",
         goal: char.goal || "",
-
         ability: char.ability || "",
         development: char.development || "",
-
         currentLocation: char.currentLocation || "",
-
         relationship: char.relationship || [],
-
         avatar: char.avatar || "",
-
         tags: char.tags || [],
-
         createdBy: char.createdBy,
         createdAt: char.createdAt,
         updatedAt: char.updatedAt,
@@ -376,7 +328,6 @@ exports.getCharacterDetail = async (req, res) => {
 
 // =========================================================================
 // LẤY DANH SÁCH NHÂN VẬT THEO STORY ID VÀ ROLE
-// Đặc tả 018_F1 & 018_F2
 // =========================================================================
 exports.getCharactersByStory = async (req, res) => {
   try {
@@ -392,7 +343,6 @@ exports.getCharactersByStory = async (req, res) => {
 
     const cleanStoryId = Number(storyId);
 
-    // Kiểm tra story
     const [storyCheck] = await db.query("SELECT COUNT(*) as count FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
 
     if (storyCheck[0].count === 0) {
@@ -413,7 +363,6 @@ exports.getCharactersByStory = async (req, res) => {
 
     const collection = mongoDb.collection("characters");
 
-    // Chỉ lấy nhân vật chưa bị xóa mềm
     let query = {
       storyId: cleanStoryId,
       isDeleted: { $ne: true },
@@ -430,39 +379,24 @@ exports.getCharactersByStory = async (req, res) => {
     const charactersList = charactersListRaw.map((char) => ({
       id: char._id.toString(),
       storyId: char.storyId,
-
       name: char.name || "",
-
-      // LOÀI
       species: char.species || "",
-
       gender: char.gender || "",
       age: char.age ?? 0,
-
       status: char.status || "alive",
-
-      // Xóa mềm
       isDeleted: char.isDeleted ?? false,
-
       occupation: char.occupation || "",
       role: char.role || "",
-
       appearance: char.appearance || "",
       personality: char.personality || "",
       background: char.background || "",
       goal: char.goal || "",
-
       ability: char.ability || "",
       development: char.development || "",
-
       currentLocation: char.currentLocation || "",
-
       relationship: char.relationship || [],
-
       avatar: char.avatar || "",
-
       tags: char.tags || [],
-
       createdBy: char.createdBy,
       createdAt: char.createdAt,
       updatedAt: char.updatedAt,
@@ -485,7 +419,6 @@ exports.getCharactersByStory = async (req, res) => {
 
 // =========================================================================
 // CẬP NHẬT THÔNG TIN NHÂN VẬT
-// Đặc tả 019_F1
 // =========================================================================
 exports.updateCharacter = async (req, res) => {
   try {
@@ -499,7 +432,6 @@ exports.updateCharacter = async (req, res) => {
       });
     }
 
-    // Kiểm tra tên nếu có gửi lên
     if (updateData.name !== undefined && !updateData.name.trim()) {
       return res.status(400).json({
         success: false,
@@ -507,7 +439,6 @@ exports.updateCharacter = async (req, res) => {
       });
     }
 
-    // Kiểm tra vai trò nếu có gửi lên
     if (updateData.role !== undefined && !updateData.role.trim()) {
       return res.status(400).json({
         success: false,
@@ -541,7 +472,6 @@ exports.updateCharacter = async (req, res) => {
 
 // =========================================================================
 // HÀM CONTROLLER CHÍNH: deleteCharacter()
-// Đặc tả 020_F1
 // =========================================================================
 exports.deleteCharacter = async (req, res) => {
   try {
@@ -581,7 +511,6 @@ exports.deleteCharacter = async (req, res) => {
       } catch (e) {}
     }
 
-    // Chỉ tìm nhân vật chưa bị xóa
     const existingCharacter = await collection.findOne({
       $or: queryConditions,
       isDeleted: { $ne: true },
@@ -628,7 +557,6 @@ exports.triggerTransformation = async (req, res) => {
   const { storyId } = req.body;
 
   try {
-    // Gửi sang n8n và đợi kết quả từ node "Respond to Webhook"
     const response = await axios.post(
       "https://n8n.baostory.fun/webhook/reverse-character",
       {
@@ -642,7 +570,6 @@ exports.triggerTransformation = async (req, res) => {
       },
     );
 
-    // Trả dữ liệu nhận được từ n8n về Frontend
     return res.status(200).json({
       success: true,
       data: response.data,

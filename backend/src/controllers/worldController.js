@@ -1,6 +1,6 @@
-const db = require("../config/db"); // Kết nối MySQL
-const { getMongoDb } = require("../config/mongo"); // Kết nối MongoDB Atlas
-const { ObjectId } = require("mongodb"); // Lấy trực tiếp ObjectId từ thư viện mongodb chính hãng
+const db = require("../config/db");
+const { getMongoDb } = require("../config/mongo");
+const { ObjectId } = require("mongodb");
 // =========================================================================
 // 1. KHỞI TẠO THẾ GIỚI / BỐI CẢNH MỚI (Tương thích WorldForm)
 // =========================================================================
@@ -25,8 +25,6 @@ exports.createWorld = async (req, res) => {
     }
 
     const cleanStoryId = Number(storyId);
-
-    // Kiểm tra bộ truyện có tồn tại trong MySQL hay không
     const [storyCheck] = await db.query("SELECT COUNT(*) as count FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
 
     if (storyCheck[0].count === 0) {
@@ -45,8 +43,6 @@ exports.createWorld = async (req, res) => {
     }
 
     const collection = mongoDb.collection("worlds");
-
-    // Đóng gói tài liệu thế giới khớp hoàn toàn với state của WorldForm
     const newWorldDoc = {
       storyId: cleanStoryId,
       title: title.trim(),
@@ -173,8 +169,6 @@ exports.updateWorld = async (req, res) => {
     }
 
     const collection = mongoDb.collection("worlds");
-
-    // Bước 2: Kiểm tra bản ghi thế giới có tồn tại theo worldId hay không
     let queryId;
     try {
       queryId = new ObjectId(worldId);
@@ -191,7 +185,6 @@ exports.updateWorld = async (req, res) => {
       });
     }
 
-    // Bước 3: Gói dữ liệu cập nhật (saveUpdatedWorldMongo / 011_F3)
     const updateFields = {
       title: title.trim(),
       description: description || "",
@@ -242,16 +235,12 @@ exports.getWorldDetail = async (req, res) => {
     }
 
     const collection = mongoDb.collection("worlds");
-
-    // Xây dựng điều kiện tìm kiếm linh hoạt và an toàn tuyệt đối
     let queryConditions = [{ id: worldId }];
 
-    // Nếu worldId có thể ép kiểu thành số (cho trường hợp ID dạng số nguyên)
     if (!isNaN(Number(worldId))) {
       queryConditions.push({ id: Number(worldId) });
     }
 
-    // Nếu chuỗi đạt chuẩn định dạng ObjectId của MongoDB thì mới đưa vào điều kiện _id
     if (ObjectId.isValid(worldId) && String(new ObjectId(worldId)) === worldId) {
       queryConditions.push({ _id: new ObjectId(worldId) });
     }
@@ -312,8 +301,6 @@ exports.deleteWorld = async (req, res) => {
     }
 
     const collection = mongoDb.collection("worlds");
-
-    // Bước 1 & 2: Kiểm tra bản ghi bối cảnh có tồn tại trong MongoDB hay không
     let queryId;
     try {
       queryId = ObjectId.isValid(worldId) ? new ObjectId(worldId) : worldId;
@@ -321,7 +308,6 @@ exports.deleteWorld = async (req, res) => {
       queryId = worldId;
     }
 
-    // Tìm kiếm linh hoạt theo _id (ObjectId) hoặc trường id (string/number)
     const existingWorld = await collection.findOne({
       $or: [{ _id: queryId }, { id: worldId }, { id: Number(worldId) }],
     });
@@ -333,7 +319,6 @@ exports.deleteWorld = async (req, res) => {
       });
     }
 
-    // Bước 3: Thực hiện xóa vĩnh viễn (Hard Delete / removeWorld - ID: 015_F2)
     const deleteResult = await collection.deleteOne({ _id: existingWorld._id });
 
     return res.status(200).json({

@@ -1,8 +1,6 @@
-// src/controllers/storyController.js
-const db = require("../config/db"); // Pool từ db.js (bản mysql2/promise)
+const db = require("../config/db");
 const { getMongoDb } = require("../config/mongo");
 const axios = require("axios");
-// Lưu thông tin gốc truyện (MySQL)
 const saveStory = async (userId, title, description, coverImage, originalStoryId) => {
   const [result] = await db.query(
     `
@@ -22,28 +20,21 @@ const saveStory = async (userId, title, description, coverImage, originalStoryId
   return result.insertId;
 };
 
-// Lưu thể loại truyện (Bảng trung gian MySQL)
 const saveStoryGenres = async (storyId, genreIds) => {
   if (!genreIds || genreIds.length === 0) return true;
-
   const values = genreIds.map((genreId) => [storyId, genreId]);
-
   await db.query(`INSERT INTO story_genres (story_id, genre_id) VALUES ?`, [values]);
   return true;
 };
 
-// Khởi tạo khung sườn truyện (MongoDB Native Client)
 const initStoryOutline = async (storyId) => {
-  // 1. Lấy instance db đã kết nối từ file config của bạn
   const mongoDb = getMongoDb();
   if (!mongoDb) {
     throw new Error("Chưa kết nối đến MongoDB Atlas!");
   }
 
-  // 2. Trỏ tới collection 'story_outlines'
   const collection = mongoDb.collection("story_outlines");
 
-  // 3. Thực hiện chèn một bản ghi tài liệu mới có các trường trống đúng đặc tả
   await collection.insertOne({
     storyId: Number(storyId),
     fiveSentences: "",
@@ -78,14 +69,12 @@ exports.createStory = async (req, res) => {
       });
     }
 
-    // Luồng thực thi ngầm
     const storyId = await saveStory(userId, title.trim(), description, coverImage, originalStoryId);
 
     if (genreIds && Array.isArray(genreIds) && genreIds.length > 0) {
       await saveStoryGenres(storyId, genreIds);
     }
 
-    // Gọi hàm khởi tạo cốt truyện Mongo thuần
     await initStoryOutline(storyId);
 
     return res.status(201).json({
@@ -140,13 +129,11 @@ const fetchChaptersByStoryId = async (storyId) => {
   const mongoDb = getMongoDb();
   if (!mongoDb) return [];
 
-  // Giả định cấu trúc bảng chapters_content lưu theo trường storyId
-  // Chỉ lấy trường mã số chương (chapterNumber/chapterIndex) và tên chương (title) theo đặc tả
   const chapters = await mongoDb
     .collection("chapters_content")
     .find({ storyId: Number(storyId) })
     .project({ _id: 0, chapterNumber: 1, title: 1 })
-    .sort({ chapterNumber: 1 }) // Sắp xếp theo thứ tự chương tăng dần
+    .sort({ chapterNumber: 1 })
     .toArray();
 
   return chapters;
@@ -156,11 +143,10 @@ const fetchCharactersByStoryId = async (storyId) => {
   const mongoDb = getMongoDb();
   if (!mongoDb) return [];
 
-  // Giả định cấu trúc bảng characters lưu theo trường storyId
   const characters = await mongoDb
     .collection("characters")
     .find({ storyId: Number(storyId) })
-    .project({ _id: 0, name: 1, role: 1, description: 1 }) // Lấy các trường thông tin nhân vật hiển thị lên dashboard
+    .project({ _id: 0, name: 1, role: 1, description: 1 })
     .toArray();
 
   return characters;
@@ -169,7 +155,7 @@ const fetchCharactersByStoryId = async (storyId) => {
 exports.getStoryDetails = async (req, res) => {
   try {
     const { storyId } = req.params;
-    const userId = req.user?.id; // Lấy từ authMiddleware xác thực token
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -178,12 +164,9 @@ exports.getStoryDetails = async (req, res) => {
       });
     }
 
-    // 1. Kiểm tra truyện tồn tại & Lấy thông tin gốc (MySQL)
     const storyData = await findStoryById(storyId);
     const [testRows] = await db.query(`SELECT id, original_story_id FROM stories WHERE id = ?`, [storyId]);
 
-    console.log("🔥 TEST ORIGINAL STORY ID:", testRows);
-    // Nếu không tồn tại hoặc đã bị xóa mềm (deleted_at IS NOT NULL đã được check trong repo)
     if (!storyData) {
       return res.status(404).json({
         success: false,
@@ -191,7 +174,6 @@ exports.getStoryDetails = async (req, res) => {
       });
     }
 
-    // Kiểm tra quyền: Đảm bảo tác giả chỉ xem được dashboard truyện của chính mình
     if (storyData.user_id !== userId) {
       return res.status(403).json({
         success: false,
@@ -199,17 +181,12 @@ exports.getStoryDetails = async (req, res) => {
       });
     }
 
-    // 2. Lấy danh sách chương để hiển thị thanh sidebar bên trái (MongoDB)
     const chaptersList = await fetchChaptersByStoryId(storyId);
-
-    // 3. Lấy danh sách nhân vật thuộc truyện (MongoDB)
     const charactersList = await fetchCharactersByStoryId(storyId);
-
-    // 4. Đóng gói dữ liệu (Aggregation) thành một Object JSON duy nhất đúng đặc tả trả về Client
     const storyDetail = {
-      ...storyData, // Thông tin cơ bản truyện (MySQL)
-      chapters: chaptersList, // Mảng danh sách chương (MongoDB)
-      characters: charactersList, // Mảng danh sách nhân vật (MongoDB)
+      ...storyData,
+      chapters: chaptersList,
+      characters: charactersList,
     };
 
     return res.status(200).json({
@@ -240,7 +217,6 @@ exports.getStories = async (req, res) => {
       });
     }
 
-    // 🟢 ĐÃ BỔ SUNG original_story_id VÀO CÂU LỆNH SELECT
     const [rows] = await db.query(
       `SELECT id, user_id, title, description, cover_image, status, original_story_id
        FROM stories
@@ -270,15 +246,13 @@ const saveUpdatedStory = async (connection, storyId, title, description, coverIm
 
 //Chỉnh sửa truyện
 exports.updateStory = async (req, res) => {
-  // Lấy một kết nối riêng biệt từ Pool để quản lý chuỗi lệnh Transaction an toàn
   const connection = await db.getConnection();
 
   try {
     const { storyId } = req.params;
     const { title, description, coverImage, genreIds } = req.body;
-    const userId = req.user?.id; // Lấy từ authMiddleware xác thực tác giả
+    const userId = req.user?.id;
 
-    // 1. Kiểm tra xác thực người dùng
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -286,7 +260,6 @@ exports.updateStory = async (req, res) => {
       });
     }
 
-    // 2. Kiểm tra dữ liệu đầu vào bắt buộc
     if (!title || title.trim() === "") {
       return res.status(400).json({
         success: false,
@@ -294,7 +267,6 @@ exports.updateStory = async (req, res) => {
       });
     }
 
-    // 3. KIỂM TRA TRUYỆN TỒN TẠI VÀ QUYỀN SỞ HỮU
     const [storyRows] = await connection.query(`SELECT id, user_id FROM stories WHERE id = ? AND deleted_at IS NULL`, [storyId]);
 
     if (storyRows.length === 0) {
@@ -311,23 +283,15 @@ exports.updateStory = async (req, res) => {
       });
     }
 
-    // KÍCH HOẠT TRANSACTION
     await connection.beginTransaction();
-
-    // 4. CẬP NHẬT THÔNG TIN GỐC (Gọi hàm repository nội bộ)
     const affectedRows = await saveUpdatedStory(connection, storyId, title.trim(), description, coverImage);
-
-    // 5. CẬP NHẬT THỂ LOẠI (BẢNG TRUNG GIAN)
-    // Bước A: Xóa toàn bộ liên kết thể loại cũ của bộ truyện này
     await connection.query(`DELETE FROM story_genres WHERE story_id = ?`, [storyId]);
 
-    // Bước B: Chèn lại các cặp liên kết mới nếu mảng genreIds hợp lệ
     if (genreIds && Array.isArray(genreIds) && genreIds.length > 0) {
       const values = genreIds.map((genreId) => [storyId, genreId]);
       await connection.query(`INSERT INTO story_genres (story_id, genre_id) VALUES ?`, [values]);
     }
 
-    // XÁC NHẬN HOÀN THÀNH GHI DỮ LIỆU VÀO DATABASE
     await connection.commit();
 
     return res.status(200).json({
@@ -335,16 +299,12 @@ exports.updateStory = async (req, res) => {
       message: "Cập nhật thông tin tác phẩm thành công.",
     });
   } catch (error) {
-    // NẾU CÓ BẤT KỲ LỖI NÀO XẢY RA, HOÀN TÁC TOÀN BỘ LẬP TỨC
     await connection.rollback();
-
-    console.error("Lỗi hệ thống tại hàm updateStory:", error.message);
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi cập nhật tác phẩm.",
     });
   } finally {
-    // Giải phóng kết nối trả về lại cho Pool quản lý
     connection.release();
   }
 };
@@ -356,7 +316,7 @@ exports.updateStory = async (req, res) => {
 exports.deleteStory = async (req, res) => {
   try {
     const { storyId } = req.params;
-    const userId = req.user?.id; // Lấy từ authMiddleware
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -365,7 +325,6 @@ exports.deleteStory = async (req, res) => {
       });
     }
 
-    // 1. Kiểm tra truyện tồn tại và xác thực quyền sở hữu của chính tác giả đó
     const [storyRows] = await db.query(`SELECT id, user_id FROM stories WHERE id = ? AND deleted_at IS NULL`, [storyId]);
 
     if (storyRows.length === 0) {
@@ -382,7 +341,6 @@ exports.deleteStory = async (req, res) => {
       });
     }
 
-    // 2. Thực thi lệnh xóa mềm trong MySQL
     await db.query(`UPDATE stories SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [storyId]);
 
     return res.status(200).json({
@@ -401,9 +359,7 @@ exports.deleteStory = async (req, res) => {
 //Tìm kiếm
 exports.searchStories = async (req, res) => {
   try {
-    const userId = req.user?.id; // Giải mã từ authMiddleware để đảm bảo tác giả chỉ tìm truyện của họ
-
-    // Tiếp nhận từ khóa từ textbox và genreId từ bộ lọc giao diện gửi lên qua Query String
+    const userId = req.user?.id;
     const { keyword, genreId } = req.query;
 
     if (!userId) {
@@ -413,17 +369,13 @@ exports.searchStories = async (req, res) => {
       });
     }
 
-    // Thực hiện chuẩn hóa chuỗi (Cắt bỏ các khoảng trắng thừa ở hai đầu)
     const cleanKeyword = keyword ? keyword.trim() : "";
-
-    // Gọi xuống hàm quy hoạch Database để xử lý truy vấn động
     const storiesList = await queryStories(userId, cleanKeyword, genreId);
 
-    // Trả kết quả bọc trong mảng 'data' đúng đặc tả cấu trúc Frontend của bạn
     return res.status(200).json({
       success: true,
-      results: storiesList, // Thỏa mãn Output đặc tả 'results: Array'
-      data: storiesList, // Đồng bộ với cấu trúc Axios Front-end đang dùng
+      results: storiesList,
+      data: storiesList,
     });
   } catch (error) {
     console.error("Lỗi nghiệp vụ tại hàm searchStories:", error.message);
@@ -435,12 +387,12 @@ exports.searchStories = async (req, res) => {
 };
 
 // ======================================================================
-// AI ĐẢO NGƯỢC Ý TƯỞNG TỪ MÔ TẢ TRUYỆN (POST /api/stories/:storyId/reverse-description)
+// AI ĐẢO NGƯỢC Ý TƯỞNG TỪ MÔ TẢ TRUYỆN
 // ======================================================================
 exports.reverseDescription = async (req, res) => {
   try {
     const { storyId } = req.params;
-    const userId = req.user?.id; // Lấy ID tác giả từ authMiddleware
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -456,7 +408,6 @@ exports.reverseDescription = async (req, res) => {
       });
     }
 
-    // 1. Kiểm tra sự tồn tại của tác phẩm trong MySQL Database
     const [rows] = await db.query("SELECT id, title, description FROM stories WHERE id = ? AND user_id = ? AND deleted_at IS NULL", [storyId, userId]);
 
     if (rows.length === 0) {
@@ -467,8 +418,6 @@ exports.reverseDescription = async (req, res) => {
     }
 
     const story = rows[0];
-
-    // 2. Chuẩn hóa chuỗi mô tả (Ưu tiên lấy mô tả mới từ req.body gửi lên, nếu không có thì dùng từ DB)
     const rawDescription = req.body?.description || story.description || "";
     const cleanDescription = rawDescription.trim();
 
@@ -479,7 +428,6 @@ exports.reverseDescription = async (req, res) => {
       });
     }
 
-    // 3. Gọi sang Webhook n8n / Service AI để xử lý đảo ngược ý tưởng
     let reverseDescription = "";
     try {
       const n8nWebhookUrl = process.env.N8N_REVERSE_WEBHOOK_URL || "https://n8n.baostory.fun/webhook/reverse-description";
@@ -494,11 +442,10 @@ exports.reverseDescription = async (req, res) => {
         },
         {
           headers: { "Content-Type": "application/json" },
-          timeout: 30000, // Timeout 30 giây chờ AI phản hồi
+          timeout: 30000,
         },
       );
 
-      // Trích xuất kết quả linh hoạt từ n8n (hỗ trợ cả dạng root và dạng bọc trong object data)
       reverseDescription = aiResponse.data?.reverseDescription || aiResponse.data?.data?.reverseDescription || "";
     } catch (aiError) {
       console.error("Lỗi khi kết nối tới Webhook n8n AI:", aiError.message);
@@ -515,7 +462,6 @@ exports.reverseDescription = async (req, res) => {
       });
     }
 
-    // 4. Lưu vết nhật ký AI reverse vào MongoDB
     try {
       const mongoDb = getMongoDb();
       if (mongoDb) {
@@ -531,7 +477,6 @@ exports.reverseDescription = async (req, res) => {
       console.warn("Không thể lưu log AI vào MongoDB:", mongoErr.message);
     }
 
-    // 5. Trả kết quả bọc trong 'data'
     const resultData = {
       storyId: Number(storyId),
       reverseDescription: reverseDescription,
@@ -541,7 +486,7 @@ exports.reverseDescription = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Đảo ngược ý tưởng thành công.",
-      data: resultData, // Thỏa mãn đồng bộ với Axios Front-end đang dùng (res.data.data)
+      data: resultData,
     });
   } catch (error) {
     console.error("Lỗi nghiệp vụ tại hàm reverseDescriptionController:", error.message);

@@ -356,7 +356,7 @@ exports.updateChapterContent = async (req, res) => {
       wordCount: wordCount,
     });
 
-    // Quản lý lịch sử phiên bản (giới hạn tối đa 10 bản ghi)
+    // Quản lý lịch sử phiên bản
     const historyCollection = mongoDb.collection("chapter_versions");
 
     const filterQuery = {
@@ -434,7 +434,7 @@ exports.saveUpdatedChapterContentMongo = async ({ storyId, chapterNumber, update
 };
 
 // =========================================================================
-// 7. N8N / SPELL CHECK
+// 7. N8N SPELL CHECK
 // =========================================================================
 exports.spellCheck = async (req, res) => {
   try {
@@ -697,25 +697,15 @@ exports.restoreChapterVersion = async (req, res) => {
 
 // =====================================================
 // 12. AI GỢI Ý NỘI DUNG CHƯƠNG
-// + KIỂM TRA OUTLINE
-// + KIỂM TRA CHARACTERS
-// + KIỂM TRA CHAPTER PLAN
-// + KIỂM TRA CHAPTER TRƯỚC
-// + LẤY WORLD TỪ MONGODB
 // =====================================================
-exports.aiSuggestPlot = async (req, res) => {
+exports.aiSuggestContent = async (req, res) => {
   try {
     const { chapterNumber } = req.params;
     const { storyId, prompt, currentContent } = req.body;
 
     const userId = req.user?.id;
 
-    console.log("🔥 ĐANG CHẠY AI SUGGEST PLOT:", "STORY:", storyId, "CHƯƠNG:", chapterNumber);
-
-    // =====================================================
     // 1. KIỂM TRA USER
-    // =====================================================
-
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -723,10 +713,7 @@ exports.aiSuggestPlot = async (req, res) => {
       });
     }
 
-    // =====================================================
     // 2. KIỂM TRA INPUT
-    // =====================================================
-
     if (!storyId || !chapterNumber) {
       return res.status(400).json({
         success: false,
@@ -744,10 +731,7 @@ exports.aiSuggestPlot = async (req, res) => {
       });
     }
 
-    // =====================================================
     // 3. KẾT NỐI MONGODB
-    // =====================================================
-
     const mongoDb = getMongoDb();
 
     if (!mongoDb) {
@@ -757,10 +741,7 @@ exports.aiSuggestPlot = async (req, res) => {
       });
     }
 
-    // =====================================================
     // 4. KIỂM TRA OUTLINE
-    // =====================================================
-
     const outlineCollection = mongoDb.collection("story_outlines");
 
     const hasOutline = await outlineCollection.findOne({
@@ -774,18 +755,13 @@ exports.aiSuggestPlot = async (req, res) => {
       });
     }
 
-    // =====================================================
     // 5. KIỂM TRA CHARACTERS
-    // =====================================================
-
     const charCollection = mongoDb.collection("characters");
 
     const characterCount = await charCollection.countDocuments({
       $or: [{ storyId: cleanStoryId }, { story_id: cleanStoryId }, { storyId: String(cleanStoryId) }, { story_id: String(cleanStoryId) }, { storyId: Number(cleanStoryId) }],
       isDeleted: { $ne: true },
     });
-
-    console.log(`🔍 SỐ LƯỢNG NHÂN VẬT CHƯA XÓA [${cleanStoryId}]:`, characterCount);
 
     if (characterCount === 0) {
       return res.status(400).json({
@@ -794,10 +770,7 @@ exports.aiSuggestPlot = async (req, res) => {
       });
     }
 
-    // =====================================================
     // 6. LẤY WORLD
-    // =====================================================
-
     const worldCollection = mongoDb.collection("worlds");
 
     const world = await worldCollection.findOne({
@@ -811,10 +784,7 @@ exports.aiSuggestPlot = async (req, res) => {
       });
     }
 
-    // =====================================================
     // 7. CHUẨN HÓA WORLD
-    // =====================================================
-
     const worldData = {
       storyId: world.storyId,
       title: world.title || "",
@@ -826,26 +796,16 @@ exports.aiSuggestPlot = async (req, res) => {
       rules: world.rules || [],
     };
 
-    console.log("🌍 WORLD ĐƯỢC GỬI SANG N8N:", JSON.stringify(worldData, null, 2));
-
-    // =====================================================
     // 8. KIỂM TRA CHAPTER PLAN + CHAPTER TRƯỚC
-    // =====================================================
-
     let currentPlan = null;
     let previousChapter = null;
 
     if (cleanChapterNumber > 1) {
       const planCollection = mongoDb.collection("chapter_plans");
-
       const contentCollection = mongoDb.collection("chapters_content");
-
       const previousChapterNumber = cleanChapterNumber - 1;
 
-      // -------------------------------
       // CURRENT PLAN
-      // -------------------------------
-
       const queryParams = {
         $or: [
           {
@@ -863,10 +823,7 @@ exports.aiSuggestPlot = async (req, res) => {
         ],
       };
 
-      // -------------------------------
       // PREVIOUS CHAPTER
-      // -------------------------------
-
       const prevQueryParams = {
         $or: [
           {
@@ -903,10 +860,7 @@ exports.aiSuggestPlot = async (req, res) => {
       }
     }
 
-    // =====================================================
     // 9. LẤY DANH SÁCH NHÂN VẬT
-    // =====================================================
-
     const characters = await charCollection
       .find({
         $or: [{ storyId: cleanStoryId }, { story_id: cleanStoryId }, { storyId: String(cleanStoryId) }, { story_id: String(cleanStoryId) }],
@@ -914,44 +868,24 @@ exports.aiSuggestPlot = async (req, res) => {
       })
       .toArray();
 
-    // =====================================================
     // 10. GỌI N8N
-    // =====================================================
-
     const N8N_PLOT_URL = "https://n8n.baostory.fun/webhook/suggest_chaptercontent";
 
     const payload = {
       storyId: cleanStoryId,
       story_id: cleanStoryId,
-
       chapterNumber: cleanChapterNumber,
       chapter_number: cleanChapterNumber,
-
       prompt: prompt || "",
-
       currentContent: currentContent || "",
-
       current_content: currentContent || "",
-
       userId: Number(userId),
       user_id: Number(userId),
-
-      // ⭐ WORLD
       world: worldData,
-
-      // ⭐ CHARACTERS
       characters: characters,
-
-      // ⭐ CHAPTER PLAN
       currentPlan: currentPlan || null,
-
-      // ⭐ CHAPTER TRƯỚC
       previousChapter: previousChapter || null,
     };
-
-    console.log("🔥 ĐÃ QUA TOÀN BỘ KIỂM TRA.");
-
-    console.log("🔥 PAYLOAD GỬI N8N:", JSON.stringify(payload, null, 2));
 
     const response = await axios.post(N8N_PLOT_URL, payload, {
       headers: {
@@ -961,12 +895,7 @@ exports.aiSuggestPlot = async (req, res) => {
       validateStatus: () => true,
     });
 
-    console.log("🔥 N8N RESPONSE STATUS:", response.status);
-
-    // =====================================================
     // 11. KIỂM TRA RESPONSE N8N
-    // =====================================================
-
     if (response.status < 200 || response.status >= 300) {
       return res.status(502).json({
         success: false,
@@ -975,16 +904,10 @@ exports.aiSuggestPlot = async (req, res) => {
       });
     }
 
-    // =====================================================
     // 12. LẤY NỘI DUNG AI
-    // =====================================================
-
     const aiContent = response.data?.content || response.data?.suggestion || response.data?.data?.content || response.data?.data || response.data || "";
 
-    // =====================================================
     // 13. RESPONSE VỀ FRONTEND
-    // =====================================================
-
     return res.status(200).json({
       success: true,
       message: "AI đã tạo gợi ý thành công.",
@@ -993,7 +916,7 @@ exports.aiSuggestPlot = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Lỗi AI Plot Suggestion:", error);
+    console.error("Lỗi AI gợi ý nội dung:", error);
 
     return res.status(500).json({
       success: false,

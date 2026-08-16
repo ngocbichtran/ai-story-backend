@@ -23,7 +23,6 @@ const saveDerivativeChapterPlans = async (storyId, chapterPlans) => {
     const title = plan.title || `Chương ${chapterNumber}`;
     const summary = plan.summary || plan.background || "";
 
-    // 1. Lưu hoặc cập nhật kế hoạch chương
     await planCollection.findOneAndUpdate(
       {
         storyId: Number(storyId),
@@ -49,7 +48,6 @@ const saveDerivativeChapterPlans = async (storyId, chapterPlans) => {
       },
     );
 
-    // 2. 🌟 Tự động kiểm tra và tạo chương rỗng trong chapters_content nếu chưa có
     const existingChapter = await contentCollection.findOne({
       storyId: Number(storyId),
       chapterNumber: chapterNumber,
@@ -99,8 +97,8 @@ const saveDerivativeCharacters = async (storyId, characters, userId) => {
     relationship: char.relationship || [],
     avatar: char.avatar || "",
     tags: char.tags || [],
-    isDeleted: false, // 🟢 Bổ sung cờ trạng thái xóa mềm mặc định là false
-    deletedAt: null, // 🟢 Mốc thời gian xóa mềm mặc định là null
+    isDeleted: false,
+    deletedAt: null,
     createdBy: userId,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -114,13 +112,13 @@ const saveDerivativeCharacters = async (storyId, characters, userId) => {
 };
 
 // =========================================================================
-// TẠO TRUYỆN PHÁI SINH TRỌN GÓI (LẤY DỮ LIỆU TỪ TRUYỆN GỐC & BẢNG TRUNG GIAN)
+// TẠO TRUYỆN PHÁI SINH
 // =========================================================================
 exports.createDerivativeStory = async (req, res) => {
   try {
-    const { title, originalStoryId, characters, chapterPlans, coverImage } = req.body;
-    const userId = req.user?.id; // Lấy ID tác giả từ token
-
+    // 1. Nhận thêm sourceChapterNumbers từ req.body do frontend gửi lên
+    const { title, originalStoryId, characters, chapterPlans, coverImage, sourceChapterNumbers } = req.body;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ success: false, message: "Bạn cần đăng nhập để thực hiện chức năng này." });
     }
@@ -138,7 +136,6 @@ exports.createDerivativeStory = async (req, res) => {
       return res.status(500).json({ success: false, message: "Mất kết nối MongoDB." });
     }
 
-    // 1. Lấy mô tả (description) từ truyện gốc
     const [originalStories] = await db.query(`SELECT description FROM stories WHERE id = ? LIMIT 1`, [originalStoryId]);
 
     let originalDescription = null;
@@ -146,18 +143,19 @@ exports.createDerivativeStory = async (req, res) => {
       originalDescription = originalStories[0].description || null;
     }
 
-    // Bước 1: Lưu thông tin truyện mới vào bảng stories (MySQL)
-    const [result] = await db.query(`INSERT INTO stories (user_id, title, description, cover_image, original_story_id, status) VALUES (?, ?, ?, ?, ?, 'DRAFT')`, [userId, title.trim(), originalDescription, coverImage || null, originalStoryId]);
+    // 2. Chuyển mảng sourceChapterNumbers thành chuỗi JSON để lưu vào MySQL
+    const sourceChaptersJson = sourceChapterNumbers && Array.isArray(sourceChapterNumbers) ? JSON.stringify(sourceChapterNumbers) : null;
+
+    // 3. Thực hiện INSERT vào MySQL bao gồm cả cột source_chapter_numbers
+    const [result] = await db.query(`INSERT INTO stories (user_id, title, description, cover_image, original_story_id, source_chapter_numbers, status) VALUES (?, ?, ?, ?, ?, ?, 'DRAFT')`, [userId, title.trim(), originalDescription, coverImage || null, originalStoryId, sourceChaptersJson]);
     const newStoryId = result.insertId;
 
-    // 1.1: Sao chép các thể loại (genres) từ truyện gốc sang truyện phái sinh
     const [originalGenres] = await db.query(`SELECT genre_id FROM story_genres WHERE story_id = ?`, [originalStoryId]);
     if (originalGenres && originalGenres.length > 0) {
       const genreInserts = originalGenres.map((g) => [newStoryId, g.genre_id]);
       await db.query(`INSERT INTO story_genres (story_id, genre_id) VALUES ?`, [genreInserts]);
     }
 
-    // Bước 2: Khởi tạo Outline (Khung cốt truyện) trên MongoDB từ truyện gốc
     const outlineCollection = mongoDb.collection("story_outlines");
     const originalOutline = await outlineCollection.findOne({ storyId: Number(originalStoryId) });
 
@@ -170,7 +168,6 @@ exports.createDerivativeStory = async (req, res) => {
       updatedAt: new Date(),
     });
 
-    // 🌟 Bước 2.1: SAO CHÉP THẾ GIỚI (WORLDS) TỪ TRUYỆN GỐC SANG TRUYỆN PHÁI SINH
     const worldsCollection = mongoDb.collection("worlds");
     const originalWorld = await worldsCollection.findOne({ storyId: Number(originalStoryId) });
 
@@ -189,7 +186,6 @@ exports.createDerivativeStory = async (req, res) => {
         updatedAt: new Date(),
       });
     } else {
-      // Nếu truyện gốc chưa có world, khởi tạo một bản ghi thế giới rỗng mặc định
       await worldsCollection.insertOne({
         storyId: Number(newStoryId),
         title: title.trim(),
@@ -205,19 +201,17 @@ exports.createDerivativeStory = async (req, res) => {
       });
     }
 
-    // Bước 3: Lưu mảng Kế hoạch chương (Chapter Plans) vào MongoDB
     if (chapterPlans && Array.isArray(chapterPlans)) {
       await saveDerivativeChapterPlans(newStoryId, chapterPlans);
     }
 
-    // Bước 4: Lưu danh sách nhiều nhân vật phái sinh vào MongoDB
     if (characters && Array.isArray(characters)) {
       await saveDerivativeCharacters(newStoryId, characters, userId);
     }
 
     return res.status(201).json({
       success: true,
-      message: "Tạo truyện phái sinh, sao chép thông tin, thể loại, thế giới, nhân vật và kế hoạch chương thành công!",
+      message: "Tạo truyện phái sinh, lưu chương nguồn, sao chép thông tin, thể loại, thế giới, nhân vật và kế hoạch chương thành công!",
       storyId: newStoryId,
     });
   } catch (error) {

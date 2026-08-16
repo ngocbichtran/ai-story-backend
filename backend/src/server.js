@@ -1,7 +1,6 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-// 1. IMPORT TOÀN BỘ ROUTES HỆ THỐNG
 const authRoutes = require("./routes/authRoutes");
 const storyRoutes = require("./routes/storyRoutes");
 const chapterRoutes = require("./routes/chapterRoutes");

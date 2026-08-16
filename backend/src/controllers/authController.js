@@ -39,7 +39,7 @@ exports.googleLogin = async (req, res) => {
     let email = "";
     let username = "";
 
-    // 1. TRƯỜNG HỢP NHẬN ACCESS TOKEN (TỪ HOOK useGoogleLogin TRÊN FRONTEND)
+    // 1. TRƯỜNG HỢP NHẬN ACCESS TOKEN
     if (token) {
       const googleRes = await axios.get("https://www.googleapis.com/oauth2/v3/userinfo", {
         headers: { Authorization: `Bearer ${token}` },
@@ -48,7 +48,7 @@ exports.googleLogin = async (req, res) => {
       email = googleRes.data.email;
       username = googleRes.data.name;
     }
-    // 2. TRƯỜNG HỢP NHẬN ID TOKEN / CREDENTIAL (TỪ COMPONENT <GoogleLogin /> MẶC ĐỊNH)
+    // 2. TRƯỜNG HỢP NHẬN ID TOKEN / CREDENTIAL
     else if (credential) {
       const ticket = await client.verifyIdToken({
         idToken: credential,

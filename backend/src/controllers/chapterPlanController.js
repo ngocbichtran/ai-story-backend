@@ -697,6 +697,14 @@ exports.suggestInitialChapterPlans = async (req, res) => {
     // 1. NHẬN DỮ LIỆU TỪ FRONTEND GỬI LÊN
     const { storyId, chapterNumber, characters } = req.body;
 
+    // ---> THÊM CONSOLE.LOG ĐỂ KIỂM TRA DỮ LIỆU <---
+    console.log("================ [DEBUG SUGGEST PLAN] ================");
+    console.log("Story ID nhận được:", storyId);
+    console.log("Danh sách chương nguồn (chapterNumber):", chapterNumber);
+    console.log("Kiểu dữ liệu của chapterNumber:", typeof chapterNumber, Array.isArray(chapterNumber));
+    console.log("Danh sách nhân vật tạm (characters):", characters ? characters.length : 0, "nhân vật");
+    console.log("======================================================");
+
     // 2. KIỂM TRA STORY ID
     if (!storyId) {
       return res.status(400).json({

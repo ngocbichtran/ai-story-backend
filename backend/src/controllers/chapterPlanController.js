@@ -792,7 +792,12 @@ exports.suggestInitialChapterPlans = async (req, res) => {
         validateStatus: () => true,
       });
     } catch (n8nError) {
-      console.error("Không kết nối được N8N:", n8nError.message);
+      console.error("CHI TIẾT LỖI GỌI N8N:", {
+        message: n8nError.message,
+        code: n8nError.code, // Ví dụ: ECONNREFUSED, ETIMEDOUT
+        responseStatus: n8nError.response?.status,
+        responseData: n8nError.response?.data,
+      });
 
       return res.status(502).json({
         success: false,

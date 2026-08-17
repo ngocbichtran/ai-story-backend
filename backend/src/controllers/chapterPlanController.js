@@ -694,13 +694,14 @@ exports.suggestCurrentChapterPlan = async (req, res) => {
 // =========================================================================
 exports.suggestInitialChapterPlans = async (req, res) => {
   try {
-    const { storyId } = req.body;
+    // 1. NHẬN DỮ LIỆU TỪ FRONTEND GỬI LÊN
+    const { storyId, chapterNumber, characters } = req.body;
 
-    // 1. KIỂM TRA STORY ID
+    // 2. KIỂM TRA STORY ID
     if (!storyId) {
       return res.status(400).json({
         success: false,
-        message: "Vui lòng cung cấp storyId để tạo 5 kế hoạch chương đầu tiên.",
+        message: "Vui lòng cung cấp storyId để tạo kế hoạch chương.",
       });
     }
 
@@ -713,7 +714,7 @@ exports.suggestInitialChapterPlans = async (req, res) => {
       });
     }
 
-    // 2. KIỂM TRA STORY TỒN TẠI TRONG MYSQL
+    // 3. KIỂM TRA STORY TỒN TẠI TRONG MYSQL
     const [storyCheck] = await db.query("SELECT id FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
 
     if (!storyCheck || storyCheck.length === 0) {
@@ -723,7 +724,7 @@ exports.suggestInitialChapterPlans = async (req, res) => {
       });
     }
 
-    // 3. KẾT NỐI MONGODB
+    // 4. KẾT NỐI MONGODB
     const mongoDb = getMongoDb();
 
     if (!mongoDb) {
@@ -733,7 +734,7 @@ exports.suggestInitialChapterPlans = async (req, res) => {
       });
     }
 
-    // 4. LẤY WORLD CỦA STORY
+    // 5. LẤY WORLD CỦA STORY
     const worldCollection = mongoDb.collection("worlds");
 
     const world = await worldCollection.findOne({
@@ -748,7 +749,7 @@ exports.suggestInitialChapterPlans = async (req, res) => {
       });
     }
 
-    // 5. CHUẨN HÓA WORLD
+    // 6. CHUẨN HÓA WORLD
     const worldData = {
       storyId: world.storyId,
       title: world.title || "",
@@ -760,27 +761,28 @@ exports.suggestInitialChapterPlans = async (req, res) => {
       rules: world.rules || [],
     };
 
-    // 6. GỌI N8N
+    // 7. CHUẨN BỊ PAYLOAD GỬI SANG N8N (Bổ sung sourceChapters & characters)
+    const n8nPayload = {
+      storyId: cleanStoryId,
+      chapterNumber: Array.isArray(chapterNumber) ? chapterNumber : [chapterNumber].filter(Boolean), // Mảng số chương nguồn từ Bước 1
+      characters: characters || [], // Danh sách nhân vật tạm từ Bước 2
+      world: worldData,
+    };
+
+    // 8. GỌI N8N
     const n8nWebhook = "https://n8n.baostory.fun/webhook/suggest_chapterplan";
 
     let n8nResponse;
 
     try {
-      n8nResponse = await axios.post(
-        n8nWebhook,
-        {
-          storyId: cleanStoryId,
-          world: worldData,
+      n8nResponse = await axios.post(n8nWebhook, n8nPayload, {
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
         },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          timeout: 120000,
-          validateStatus: () => true,
-        },
-      );
+        timeout: 120000,
+        validateStatus: () => true,
+      });
     } catch (n8nError) {
       console.error("Không kết nối được N8N:", n8nError.message);
 
@@ -791,7 +793,7 @@ exports.suggestInitialChapterPlans = async (req, res) => {
       });
     }
 
-    // 7. KIỂM TRA RESPONSE N8N
+    // 9. KIỂM TRA RESPONSE N8N
     if (n8nResponse.status < 200 || n8nResponse.status >= 300) {
       return res.status(502).json({
         success: false,
@@ -800,7 +802,7 @@ exports.suggestInitialChapterPlans = async (req, res) => {
       });
     }
 
-    // 8. CHUẨN HÓA DỮ LIỆU TRẢ VỀ TỪ N8N
+    // 10. CHUẨN HÓA DỮ LIỆU TRẢ VỀ TỪ N8N
     let rawData = n8nResponse.data;
 
     if (typeof rawData === "string") {
@@ -831,36 +833,36 @@ exports.suggestInitialChapterPlans = async (req, res) => {
       });
     }
 
-    // 9. COLLECTION CHAPTER
+    // 11. COLLECTION CHAPTER
     const planCollection = mongoDb.collection("chapter_plans");
     const contentCollection = mongoDb.collection("chapters_content");
     const processedPlans = [];
 
-    // 10. DUYỆT TỪNG KẾ HOẠCH
+    // 12. DUYỆT TỪNG KẾ HOẠCH VÀ LƯU VÀO MONGODB
     for (const item of plansArray) {
       const chapterPlan = item?.chapterPlan || item?.json?.chapterPlan || item;
-      const chapterNumber = Number(chapterPlan.chapterNumber || chapterPlan.chapter_number);
+      const chapterNumberVal = Number(chapterPlan.chapterNumber || chapterPlan.chapter_number);
 
-      if (!chapterNumber || isNaN(chapterNumber)) {
+      if (!chapterNumberVal || isNaN(chapterNumberVal)) {
         continue;
       }
 
-      const title = chapterPlan.title || `Chương ${chapterNumber}`;
+      const title = chapterPlan.title || `Chương ${chapterNumberVal}`;
       const purpose = chapterPlan.purpose || "";
       const conflict = chapterPlan.conflict || "";
       const endingHook = chapterPlan.endingHook || "";
       const summary = chapterPlan.summary || chapterPlan.background || "";
 
-      // 10.1 UPSERT CHAPTER PLAN
+      // 12.1 UPSERT CHAPTER PLAN
       const planUpdateResult = await planCollection.findOneAndUpdate(
         {
           storyId: cleanStoryId,
-          chapterNumber: chapterNumber,
+          chapterNumber: chapterNumberVal,
         },
         {
           $setOnInsert: {
             storyId: cleanStoryId,
-            chapterNumber: chapterNumber,
+            chapterNumber: chapterNumberVal,
             createdAt: new Date(),
           },
           $set: {
@@ -880,10 +882,10 @@ exports.suggestInitialChapterPlans = async (req, res) => {
 
       const savedPlan = planUpdateResult.value || planUpdateResult;
 
-      // 10.2 KIỂM TRA CHƯƠNG NỘI DUNG
+      // 12.2 KIỂM TRA CHƯƠNG NỘI DUNG
       const existingChapter = await contentCollection.findOne({
         storyId: cleanStoryId,
-        chapterNumber: chapterNumber,
+        chapterNumber: chapterNumberVal,
       });
 
       let chapterId = null;
@@ -891,10 +893,10 @@ exports.suggestInitialChapterPlans = async (req, res) => {
       if (existingChapter) {
         chapterId = existingChapter._id.toString();
       } else {
-        // 10.3 TẠO CHƯƠNG RỖNG
+        // 12.3 TẠO CHƯƠNG RỖNG
         const newChapterDoc = {
           storyId: cleanStoryId,
-          chapterNumber: chapterNumber,
+          chapterNumber: chapterNumberVal,
           title: title,
           content: "",
           status: "DRAFT",
@@ -906,12 +908,12 @@ exports.suggestInitialChapterPlans = async (req, res) => {
         chapterId = insertResult.insertedId.toString();
       }
 
-      // 10.4 ĐƯA VÀO KẾT QUẢ
+      // 12.4 ĐƯA VÀO KẾT QUẢ
       processedPlans.push({
         planId: savedPlan._id ? savedPlan._id.toString() : null,
         chapterId,
         storyId: cleanStoryId,
-        chapterNumber,
+        chapterNumber: chapterNumberVal,
         title,
         summary,
         purpose,
@@ -920,10 +922,10 @@ exports.suggestInitialChapterPlans = async (req, res) => {
       });
     }
 
-    // 11. RESPONSE VỀ FRONTEND
+    // 13. RESPONSE VỀ FRONTEND
     return res.status(200).json({
       success: true,
-      message: "AI đã tạo thành công 5 kế hoạch chương đầu tiên và khởi tạo các chương rỗng tương ứng.",
+      message: "AI đã tạo thành công kế hoạch chương dựa trên chương nguồn và nhân vật phái sinh!",
       data: processedPlans,
     });
   } catch (error) {
@@ -931,7 +933,7 @@ exports.suggestInitialChapterPlans = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Lỗi hệ thống khi tạo 5 kế hoạch chương đầu.",
+      message: "Lỗi hệ thống khi tạo kế hoạch chương.",
       error: error.message,
     });
   }

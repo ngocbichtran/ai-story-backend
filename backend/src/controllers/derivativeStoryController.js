@@ -1,9 +1,6 @@
 const db = require("../config/db"); // File kết nối MySQL của bạn
 const { getMongoDb } = require("../config/mongo"); // File kết nối MongoDB của bạn
 
-// =========================================================================
-// HÀM HỖ TRỢ: LƯU KẾ HOẠCH CHƯƠNG VÀ TỰ ĐỘNG TẠO CHƯƠNG RỖNG TƯƠNG ỨNG
-// =========================================================================
 const saveDerivativeChapterPlans = async (storyId, chapterPlans) => {
   if (!chapterPlans || !Array.isArray(chapterPlans) || chapterPlans.length === 0) {
     return true;
@@ -17,53 +14,46 @@ const saveDerivativeChapterPlans = async (storyId, chapterPlans) => {
 
   const flatPlans = Array.isArray(chapterPlans[0]) ? chapterPlans.flat(Infinity) : chapterPlans;
 
+  const plansToInsert = [];
+  const contentsToInsert = [];
+
   for (let index = 0; index < flatPlans.length; index++) {
     const plan = flatPlans[index];
     const chapterNumber = Number(plan.chapterNumber || index + 1);
     const title = plan.title || `Chương ${chapterNumber}`;
     const summary = plan.summary || plan.background || "";
 
-    await planCollection.findOneAndUpdate(
-      {
-        storyId: Number(storyId),
-        chapterNumber: chapterNumber,
-      },
-      {
-        $setOnInsert: {
-          storyId: Number(storyId),
-          chapterNumber: chapterNumber,
-          createdAt: new Date(),
-        },
-        $set: {
-          title,
-          summary,
-          purpose: plan.purpose || "",
-          conflict: plan.conflict || "",
-          endingHook: plan.endingHook || "",
-          updatedAt: new Date(),
-        },
-      },
-      {
-        upsert: true,
-      },
-    );
-
-    const existingChapter = await contentCollection.findOne({
-      storyId: Number(storyId),
+    // Chuẩn bị dữ liệu hoàn toàn mới gắn với storyId mới (phái sinh)
+    plansToInsert.push({
+      storyId: Number(storyId), // PHẢI LÀ ID CỦA TRUYỆN PHÁI SINH
       chapterNumber: chapterNumber,
+      title,
+      summary,
+      purpose: plan.purpose || "",
+      conflict: plan.conflict || "",
+      endingHook: plan.endingHook || "",
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
 
-    if (!existingChapter) {
-      await contentCollection.insertOne({
-        storyId: Number(storyId),
-        chapterNumber: chapterNumber,
-        title: title,
-        content: "",
-        status: "DRAFT",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-    }
+    contentsToInsert.push({
+      storyId: Number(storyId), // PHẢI LÀ ID CỦA TRUYỆN PHÁI SINH
+      chapterNumber: chapterNumber,
+      title: title,
+      content: "",
+      status: "DRAFT",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
+
+  // Thực hiện insert độc lập, không dùng findOneAndUpdate để tránh ghi đè nhầm
+  if (plansToInsert.length > 0) {
+    await planCollection.insertMany(plansToInsert);
+  }
+
+  if (contentsToInsert.length > 0) {
+    await contentCollection.insertMany(contentsToInsert);
   }
 
   return true;

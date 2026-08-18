@@ -664,7 +664,7 @@ exports.suggestChapterPlan = async (req, res) => {
 };
 
 // =========================================================================
-// HÀM CONTROLLER GỌI N8N TẠO 5 KẾ HOẠCH CHƯƠNG ĐẦU TIÊN
+// HÀM CONTROLLER GỌI N8N TẠO 5 KẾ HOẠCH CHƯƠNG ĐẦU TIÊN (CHỈ GỢI Ý, KHÔNG LƯU DB)
 // =========================================================================
 exports.suggestInitialChapterPlans = async (req, res) => {
   try {
@@ -785,98 +785,31 @@ exports.suggestInitialChapterPlans = async (req, res) => {
       });
     }
 
-    const planCollection = mongoDb.collection("chapter_plans");
-    const contentCollection = mongoDb.collection("chapters_content");
-    const processedPlans = [];
-
-    for (const item of plansArray) {
+    // Chuẩn hóa mảng dữ liệu trả về cho Frontend hiển thị tạm thời, KHÔNG LƯU VÀO DB
+    const processedPlans = plansArray.map((item, index) => {
       const chapterPlan = item?.chapterPlan || item?.json?.chapterPlan || item;
-      const chapterNumberVal = Number(chapterPlan.chapterNumber || chapterPlan.chapter_number);
+      const chapterNumberVal = Number(chapterPlan.chapterNumber || chapterPlan.chapter_number || index + 1);
 
-      if (!chapterNumberVal || isNaN(chapterNumberVal)) {
-        continue;
-      }
-
-      const title = chapterPlan.title || `Chương ${chapterNumberVal}`;
-      const purpose = chapterPlan.purpose || "";
-      const conflict = chapterPlan.conflict || "";
-      const endingHook = chapterPlan.endingHook || "";
-      const summary = chapterPlan.summary || chapterPlan.background || "";
-
-      const planUpdateResult = await planCollection.findOneAndUpdate(
-        {
-          storyId: cleanStoryId,
-          chapterNumber: chapterNumberVal,
-        },
-        {
-          $setOnInsert: {
-            storyId: cleanStoryId,
-            chapterNumber: chapterNumberVal,
-            createdAt: new Date(),
-          },
-          $set: {
-            title,
-            summary,
-            purpose,
-            conflict,
-            endingHook,
-            updatedAt: new Date(),
-          },
-        },
-        {
-          upsert: true,
-          returnDocument: "after",
-        },
-      );
-
-      const savedPlan = planUpdateResult.value || planUpdateResult;
-
-      const existingChapter = await contentCollection.findOne({
-        storyId: cleanStoryId,
+      return {
         chapterNumber: chapterNumberVal,
-      });
-
-      let chapterId = null;
-      if (existingChapter) {
-        chapterId = existingChapter._id.toString();
-      } else {
-        const newChapterDoc = {
-          storyId: cleanStoryId,
-          chapterNumber: chapterNumberVal,
-          title: title,
-          content: "",
-          status: "DRAFT",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-
-        const insertResult = await contentCollection.insertOne(newChapterDoc);
-        chapterId = insertResult.insertedId.toString();
-      }
-
-      processedPlans.push({
-        planId: savedPlan._id ? savedPlan._id.toString() : null,
-        chapterId,
-        storyId: cleanStoryId,
-        chapterNumber: chapterNumberVal,
-        title,
-        summary,
-        purpose,
-        conflict,
-        endingHook,
-      });
-    }
+        title: chapterPlan.title || `Chương ${chapterNumberVal}`,
+        summary: chapterPlan.summary || chapterPlan.background || "",
+        purpose: chapterPlan.purpose || "",
+        conflict: chapterPlan.conflict || "",
+        endingHook: chapterPlan.endingHook || "",
+      };
+    });
 
     return res.status(200).json({
       success: true,
-      message: "AI đã tạo thành công kế hoạch chương dựa trên chương nguồn và nhân vật phái sinh!",
+      message: "AI đã gợi ý kế hoạch chương thành công!",
       data: processedPlans,
     });
   } catch (error) {
     console.error("LỖI suggestInitialChapterPlans:", error);
     return res.status(500).json({
       success: false,
-      message: "Lỗi hệ thống khi tạo kế hoạch chương.",
+      message: "Lỗi hệ thống khi gợi ý kế hoạch chương.",
       error: error.message,
     });
   }

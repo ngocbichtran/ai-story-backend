@@ -5,13 +5,11 @@ const n8nService = require("../services/n8nService");
 const axios = require("axios");
 
 // =========================================================================
-// 1. KHỞI TẠO HOẶC CẬP NHẬT CHƯƠNG MỚI (UPSERT MONGODB)
+// 1. KHỞI TẠO HOẶC CẬP NHẬT CHƯƠNG MỚI (MONGODB)
 // =========================================================================
 exports.createChapter = async (req, res) => {
   try {
     const { storyId } = req.params;
-
-    const chapterNumber = req.body.chapterNumber || req.body.chapter_number;
     const { title } = req.body;
     const userId = req.user?.id;
 
@@ -22,17 +20,26 @@ exports.createChapter = async (req, res) => {
       });
     }
 
-    if (!storyId || !chapterNumber || !title) {
+    if (!storyId || !title || !title.trim()) {
       return res.status(400).json({
         success: false,
-        message: "Thiếu thông tin đầu vào bắt buộc (storyId, chapterNumber, title).",
+        message: "Thiếu thông tin bắt buộc (storyId, title).",
       });
     }
 
     const cleanStoryId = Number(storyId);
-    const cleanChapterNumber = Number(chapterNumber);
 
-    const [storyCheck] = await db.query("SELECT COUNT(*) as count FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
+    if (!Number.isInteger(cleanStoryId) || cleanStoryId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Mã tác phẩm không hợp lệ.",
+      });
+    }
+
+    // =====================================================================
+    // KIỂM TRA TRUYỆN
+    // =====================================================================
+    const [storyCheck] = await db.query("SELECT COUNT(*) AS count FROM stories WHERE id = ? AND deleted_at IS NULL", [cleanStoryId]);
 
     if (storyCheck[0].count === 0) {
       return res.status(404).json({
@@ -41,7 +48,11 @@ exports.createChapter = async (req, res) => {
       });
     }
 
+    // =====================================================================
+    // KẾT NỐI MONGODB
+    // =====================================================================
     const mongoDb = getMongoDb();
+
     if (!mongoDb) {
       return res.status(500).json({
         success: false,
@@ -52,14 +63,67 @@ exports.createChapter = async (req, res) => {
     const collection = mongoDb.collection("chapters_content");
     const planCollection = mongoDb.collection("chapter_plans");
 
-    // Dùng updateOne với upsert: true để tự động tạo mới nếu chưa có, hoặc cập nhật nếu đã tồn tại
+    // =====================================================================
+    // XÁC ĐỊNH CHAPTER NUMBER
+    // =====================================================================
+    const requestedChapterNumber = req.body.chapterNumber || req.body.chapter_number;
+
+    let cleanChapterNumber;
+
+    // ---------------------------------------------------------------------
+    // Nếu frontend gửi chapterNumber:
+    // → xem đây là thao tác cập nhật/tạo tại vị trí chương cụ thể.
+    // ---------------------------------------------------------------------
+    if (requestedChapterNumber !== undefined && requestedChapterNumber !== null) {
+      cleanChapterNumber = Number(requestedChapterNumber);
+
+      if (!Number.isInteger(cleanChapterNumber) || cleanChapterNumber <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Số chương không hợp lệ.",
+        });
+      }
+    } else {
+      // -------------------------------------------------------------------
+      // Nếu không gửi chapterNumber:
+      // → tự động tạo chương tiếp theo.
+      // -------------------------------------------------------------------
+      const lastChapter = await collection
+        .find({
+          $or: [{ storyId: cleanStoryId }, { story_id: cleanStoryId }],
+        })
+        .sort({ chapterNumber: -1, chapter_number: -1 })
+        .limit(1)
+        .next();
+
+      if (lastChapter) {
+        const lastChapterNumber = Number(lastChapter.chapterNumber ?? lastChapter.chapter_number) || 0;
+
+        cleanChapterNumber = lastChapterNumber + 1;
+      } else {
+        cleanChapterNumber = 1;
+      }
+    }
+
+    // =====================================================================
+    // TÌM CHƯƠNG HIỆN TẠI
+    // =====================================================================
     const chapterFilter = {
       $or: [
-        { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
-        { story_id: cleanStoryId, chapter_number: cleanChapterNumber },
+        {
+          storyId: cleanStoryId,
+          chapterNumber: cleanChapterNumber,
+        },
+        {
+          story_id: cleanStoryId,
+          chapter_number: cleanChapterNumber,
+        },
       ],
     };
 
+    // =====================================================================
+    // UPSERT CHAPTER
+    // =====================================================================
     const chapterUpdateResult = await collection.findOneAndUpdate(
       chapterFilter,
       {
@@ -76,15 +140,28 @@ exports.createChapter = async (req, res) => {
           updatedAt: new Date(),
         },
       },
-      { upsert: true, returnDocument: "after" },
+      {
+        upsert: true,
+        returnDocument: "after",
+      },
     );
 
     const insertedOrUpdatedChapter = chapterUpdateResult.value || chapterUpdateResult;
-    const chapterIdStr = insertedOrUpdatedChapter._id ? insertedOrUpdatedChapter._id.toString() : "";
 
-    // Tự động khởi tạo hoặc cập nhật bản ghi trong `chapter_plans`
+    if (!insertedOrUpdatedChapter?._id) {
+      throw new Error("Không lấy được ID chương sau khi tạo hoặc cập nhật.");
+    }
+
+    const chapterIdStr = insertedOrUpdatedChapter._id.toString();
+
+    // =====================================================================
+    // KHỞI TẠO HOẶC CẬP NHẬT CHAPTER PLAN
+    // =====================================================================
     await planCollection.updateOne(
-      { storyId: cleanStoryId, chapterNumber: cleanChapterNumber },
+      {
+        storyId: cleanStoryId,
+        chapterNumber: cleanChapterNumber,
+      },
       {
         $setOnInsert: {
           storyId: cleanStoryId,
@@ -97,9 +174,14 @@ exports.createChapter = async (req, res) => {
           updatedAt: new Date(),
         },
       },
-      { upsert: true },
+      {
+        upsert: true,
+      },
     );
 
+    // =====================================================================
+    // RESPONSE
+    // =====================================================================
     return res.status(200).json({
       success: true,
       message: "Create or update chapter and plan success",
@@ -112,10 +194,12 @@ exports.createChapter = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Lỗi tại hàm createChapter:", error.message);
+    console.error("Lỗi tại hàm createChapter:", error);
+
     return res.status(500).json({
       success: false,
       message: "Lỗi hệ thống khi khởi tạo chương truyện mới.",
+      error: error.message,
     });
   }
 };

@@ -451,10 +451,18 @@ exports.reverseDescription = async (req, res) => {
 
       reverseDescription = aiResponse.data?.reverseDescription || aiResponse.data?.data?.reverseDescription || "";
     } catch (aiError) {
-      console.error("Lỗi khi kết nối tới Webhook n8n AI:", aiError.message);
+      console.error("========== N8N ERROR ==========");
+      console.error("Message:", aiError.message);
+      console.error("Code:", aiError.code);
+      console.error("Status:", aiError.response?.status);
+      console.error("Response:", aiError.response?.data);
+      console.error("URL:", aiError.config?.url);
+      console.error("================================");
+
       return res.status(502).json({
         success: false,
-        message: "Dịch vụ AI hiện không phản hồi. Vui lòng thử lại sau.",
+        message: "Dịch vụ AI hiện không phản hồi.",
+        error: aiError.response?.data || aiError.message,
       });
     }
 

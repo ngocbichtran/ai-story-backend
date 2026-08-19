@@ -698,7 +698,7 @@ exports.getChapterHistory = async (req, res) => {
       versionName: ver.versionName || `Bản lưu ${history.length - index}`,
       content: ver.content || "",
       wordCount: ver.wordCount || 0,
-      createdAt: new Date(ver.createdAt).toLocaleString("vi-VN"),
+      createdAt: new Date(ver.createdAt),
       isDraft: false,
     }));
 

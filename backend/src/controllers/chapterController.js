@@ -711,7 +711,7 @@ exports.getChapterHistory = async (req, res) => {
           versionName: "Bản nháp tự động gần nhất",
           content: currentChapterDoc.content || "",
           wordCount: currentChapterDoc.wordCount || 0,
-          createdAt: new Date(draftUpdatedAt).toLocaleString("vi-VN"),
+          createdAt: new Date(draftUpdatedAt),
           isDraft: true,
         },
       ];

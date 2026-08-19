@@ -445,7 +445,7 @@ exports.reverseDescription = async (req, res) => {
         },
         {
           headers: { "Content-Type": "application/json" },
-          timeout: 30000,
+          timeout: 60000,
         },
       );
 
